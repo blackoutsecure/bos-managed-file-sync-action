@@ -1,4 +1,4 @@
-"""Service catalog parsing, layering, and resolution."""
+"""Service registry parsing, layering, and resolution."""
 
 from __future__ import annotations
 
@@ -35,19 +35,15 @@ def test_repo_definitions_override_catalog(repo):
     assert load_catalog(repo.root, section)["common"].files[0].path == "OVERRIDE.txt"
 
 
-def test_extra_catalog_layers_on_top_of_defaults(repo):
-    catalog_file = repo.write(
-        "org-catalog.json",
-        '{"services": {"org_policy": {"mode": "init", "files": [{"path": "POLICY.md", "content": "x"}]}}}',
-    )
-    catalog = load_catalog(repo.root, catalog_paths=[catalog_file])
+def test_custom_service_layers_on_top_of_marketplace_defaults(repo):
+    section = {
+        "service_definitions": {
+            "org_policy": {"mode": "init", "files": [{"path": "POLICY.md", "content": "x"}]}
+        }
+    }
+    catalog = load_catalog(repo.root, section)
     assert "org_policy" in catalog
     assert "common" in catalog
-
-
-def test_default_catalog_can_be_disabled(repo):
-    section = {"service_definitions": {"custom": {"files": [{"path": "a.txt", "content": "x"}]}}}
-    assert list(load_catalog(repo.root, section, include_defaults=False)) == ["custom"]
 
 
 def test_rejects_path_traversal():
@@ -124,6 +120,12 @@ def test_disabled_services_are_skipped(repo):
     catalog = load_catalog(repo.root)
     section = {"services": ["common", "dotfiles"], "disabled_services": ["dotfiles"]}
     assert [s.name for s in resolve_services(catalog, section)] == ["common"]
+
+
+def test_exclude_services_are_skipped(repo):
+    catalog = load_catalog(repo.root)
+    section = {"services": ["common", "dotfiles"], "exclude_services": ["common"]}
+    assert [s.name for s in resolve_services(catalog, section)] == ["dotfiles"]
 
 
 def test_wildcard_selects_every_file_service(repo):
@@ -238,3 +240,51 @@ def test_block_services_may_share_a_path(repo):
 def test_check_conflicts_accepts_a_single_owner(repo):
     catalog = load_catalog(repo.root)
     check_conflicts(resolve_services(catalog, {"services": ["markdownlint"]}))
+
+
+def test_content_file_prefers_default_managed_files_path(repo):
+    repo.write(".github/managed-files/templates/body.txt", "from-managed-files\n")
+    repo.write("templates/body.txt", "from-root\n")
+    service = parse_service(
+        "tpl",
+        {"mode": "file", "files": [{"path": "out.txt", "content_file": "templates/body.txt"}]},
+        [repo.root / ".github/managed-files", repo.root],
+    )
+    assert service.files[0].content == "from-managed-files\n"
+
+
+def test_load_catalog_uses_custom_managed_files_path(repo):
+    repo.write("my-managed/templates/custom.txt", "custom-content\n")
+    section = {
+        "services": ["custom"],
+        "service_definitions": {
+            "custom": {
+                "mode": "file",
+                "files": [{"path": "output.txt", "content_file": "templates/custom.txt"}],
+            }
+        },
+        "managed_files_path": "my-managed",
+    }
+    catalog = load_catalog(repo.root, section)
+    assert catalog["custom"].files[0].content == "custom-content\n"
+
+
+def test_load_catalog_rejects_invalid_managed_files_path(repo):
+    section = {"managed_files_path": "../outside"}
+    with pytest.raises(ConfigError):
+        load_catalog(repo.root, section)
+
+
+def test_load_catalog_does_not_fallback_to_repo_root_for_content_file(repo):
+    repo.write("templates/custom.txt", "from-root-only\n")
+    section = {
+        "services": ["custom"],
+        "service_definitions": {
+            "custom": {
+                "mode": "file",
+                "files": [{"path": "output.txt", "content_file": "templates/custom.txt"}],
+            }
+        },
+    }
+    with pytest.raises(ConfigError):
+        load_catalog(repo.root, section)

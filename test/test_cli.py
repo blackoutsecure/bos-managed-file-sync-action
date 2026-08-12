@@ -39,11 +39,6 @@ def test_services_flag_without_config(repo):
     assert repo.exists(".editorconfig")
 
 
-def test_no_default_catalog_flag(repo):
-    repo.write_config({"services": ["common"]})
-    assert main(["apply", "--root", str(repo.root), "--no-default-catalog"]) == EXIT_CONFIG
-
-
 def test_invalid_config_returns_config_exit_code(repo):
     repo.write("bos-universal-config.json", "{ broken")
     assert main(["apply", "--root", str(repo.root)]) == EXIT_CONFIG
@@ -118,7 +113,7 @@ def test_conflicting_services_return_config_exit_code(repo):
 
 
 def test_readme_minimal_config_is_valid(repo):
-    """The minimal config documented in the README must resolve against the default catalog."""
+    """The minimal config documented in the README must resolve against marketplace defaults."""
     section = {
         "services": ["common", "lf_line_endings", "dotfiles", "codeowners"],
         "variables": {"owner": "Example Org", "codeowner": "@example-org/platform-team"},
@@ -132,7 +127,7 @@ def test_readme_minimal_config_is_valid(repo):
 def test_github_output_is_written(repo, monkeypatch):
     output_file = repo.root / "gh_output.txt"
     monkeypatch.setenv("GITHUB_OUTPUT", str(output_file))
-    repo.write_config({"services": ["common"]})
+    repo.write_config({"use_marketplace_services": False, "services": ["common"]})
 
     assert main(["apply", "--root", str(repo.root)]) == EXIT_OK
 
@@ -140,3 +135,56 @@ def test_github_output_is_written(repo, monkeypatch):
     assert "changed=true" in content
     assert "changed_count=1" in content
     assert json.dumps([".gitignore"]) in content
+
+
+def test_global_config_is_ignored_by_default(repo):
+    repo.write_config({"services": ["common"]})
+    repo.write(
+        ".github/blackout-secure-managed-file-sync-global-config.json",
+        "{ not json",
+    )
+    assert main(["apply", "--root", str(repo.root)]) == EXIT_OK
+
+
+def test_global_config_is_loaded_when_enabled(repo):
+    repo.write_config({"services": ["common"]})
+    repo.write(
+        ".github/blackout-secure-managed-file-sync-global-config.json",
+        "{ not json",
+    )
+    assert main(["apply", "--root", str(repo.root), "--use-global-config"]) == EXIT_CONFIG
+
+
+def test_cli_managed_files_path_override(repo):
+    repo.write(
+        ".github/bos-universal-config.json",
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "services": ["custom"],
+                    "service_definitions": {
+                        "custom": {
+                            "mode": "file",
+                            "files": [{"path": "MANAGED.txt", "content_file": "templates/custom.txt"}],
+                        }
+                    },
+                }
+            }
+        ),
+    )
+    repo.write("templates/custom.txt", "root-template\n")
+    repo.write("alt-managed/templates/custom.txt", "managed-template\n")
+
+    assert (
+        main(
+            [
+                "apply",
+                "--root",
+                str(repo.root),
+                "--managed-files-path",
+                "alt-managed",
+            ]
+        )
+        == EXIT_OK
+    )
+    assert repo.read("MANAGED.txt").endswith("managed-template\n")

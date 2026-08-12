@@ -1,5 +1,5 @@
 # Blackout Secure universal security and policy kicker (hub-managed).
-# Customize via `bos-universal-config.json` (repo root), not this file.
+# Customize via `.github/bos-universal-config.json`, not this file.
 # Schema docs: https://github.com/blackoutsecure/bos-automation-hub
 name: Blackout Secure Universal Security
 run-name: >-

@@ -2,8 +2,8 @@
 
 Subcommands:
 
-    services   list every service in the resolved catalog
-    validate   parse the repo config + catalog and report the enabled services
+    services   list every service in the resolved config
+    validate   parse the repo config and report the enabled services
     apply      reconcile the working tree against the enabled services
     check      dry-run drift gate (``apply --dry-run --fail-on-drift``)
 
@@ -35,14 +35,31 @@ EXIT_OK = 0
 EXIT_DRIFT = 1
 EXIT_CONFIG = 2
 
+DEFAULT_GLOBAL_CONFIG_PATH = ".github/blackout-secure-managed-file-sync-global-config.json"
+
 
 def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--root", default=".", help="Repository root to sync (default: current directory)")
-    parser.add_argument("--global-config", default=None, help="Path to org/hub-level config file (merged first)")
+    parser.add_argument(
+        "--use-global-config",
+        action="store_true",
+        help="Enable org/hub-level global config merge (off by default)",
+    )
+    parser.add_argument(
+        "--global-config",
+        default=DEFAULT_GLOBAL_CONFIG_PATH,
+        help=(
+            "Path to org/hub-level config file when --use-global-config is set "
+            f"(default: {DEFAULT_GLOBAL_CONFIG_PATH})"
+        ),
+    )
     parser.add_argument("--config", default=None, help="Path to repo-specific config file (overrides global)")
-    parser.add_argument("--catalog", action="append", default=[], help="Extra service catalog file (repeatable)")
+    parser.add_argument(
+        "--managed-files-path",
+        default=None,
+        help="Relative path to managed file templates directory (default: .github/managed-files)",
+    )
     parser.add_argument("--services", default=None, help="Comma separated service list overriding the config")
-    parser.add_argument("--no-default-catalog", action="store_true", help="Do not load the built-in catalog")
 
 
 def _add_sync_arguments(parser: argparse.ArgumentParser) -> None:
@@ -58,10 +75,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"bos-managed-file-sync {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    services = subparsers.add_parser("services", help="List the services in the resolved catalog")
+    services = subparsers.add_parser("services", help="List the services in the resolved config")
     _add_common_arguments(services)
 
-    validate = subparsers.add_parser("validate", help="Validate the repo config and catalog")
+    validate = subparsers.add_parser("validate", help="Validate the repo config")
     _add_common_arguments(validate)
 
     apply_cmd = subparsers.add_parser("apply", help="Reconcile the working tree")
@@ -81,7 +98,11 @@ class _Plan:
     def __init__(self, args: argparse.Namespace) -> None:
         self.root = Path(args.root).resolve()
         self.config_file = find_config(self.root, args.config)
-        self.global_config_file = find_config(self.root, args.global_config)
+        self.global_config_file = (
+            find_config(self.root, args.global_config)
+            if args.use_global_config
+            else None
+        )
         self.section = load_repo_config(
             config_file=self.config_file,
             global_config_file=self.global_config_file,
@@ -89,10 +110,7 @@ class _Plan:
         self.catalog = load_catalog(
             root=self.root,
             section=self.section,
-            catalog_paths=[Path(path) for path in args.catalog],
-            include_defaults=not (
-                args.no_default_catalog or self.section.get("disable_default_catalog", False)
-            ),
+            managed_files_path=args.managed_files_path,
         )
         self.services = resolve_services(self.catalog, self.section, parse_service_list(args.services))
         self.namespace = marker_namespace(self.section)
@@ -175,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "validate":
             _print_header(plan, "validate")
-            print("\nConfig and catalog are valid.")
+            print("\nConfig is valid.")
             return EXIT_OK
 
         if args.command == "check":

@@ -62,6 +62,7 @@
     }
   },
   "managed_file_sync": {
+    "managed_files_path": ".github/managed-files",
     "services": [
       "python",
       "bos_universal_config"

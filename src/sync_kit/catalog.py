@@ -1,10 +1,7 @@
-"""Service catalog: the registry of what "in sync" means.
+"""Service registry: what "in sync" means.
 
-Catalog sources are layered, later layers winning:
-
-1. the built-in vendor-neutral catalog shipped with the kit,
-2. any extra catalog files passed via ``--catalog`` / ``catalog_path``,
-3. the repo's own ``service_definitions`` block.
+Service definitions are centralized in merged config (`managed_file_sync`),
+which already includes marketplace + global + repo tiers.
 
 Services are pure data — nothing here is executed, fetched, or evaluated.
 """
@@ -16,10 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .config import load_json
+from .config import load_repo_config
 from .errors import ConfigError
-
-DEFAULT_CATALOG_PATH = Path(__file__).resolve().parent / "data" / "default-catalog.json"
 
 VALID_MODES = ("block", "file", "init", "absent")
 
@@ -108,7 +103,7 @@ def parse_service(name: str, spec: dict[str, Any], base_dirs: Iterable[Path] = (
         path = str(entry.get("path", "")).strip()
         if not path:
             raise ConfigError(f"service '{name}' has a file entry without 'path'")
-        # Containment check: a shared catalog must never write outside the repo.
+        # Containment check: service definitions must never write outside the repo.
         if Path(path).is_absolute() or ".." in Path(path).parts:
             raise ConfigError(f"service '{name}' path must stay inside the repo: {path}")
         file_mode = str(entry.get("mode", mode))
@@ -140,25 +135,45 @@ def parse_service(name: str, spec: dict[str, Any], base_dirs: Iterable[Path] = (
 def load_catalog(
     root: Path,
     section: dict[str, Any] | None = None,
-    catalog_paths: Iterable[Path] = (),
-    include_defaults: bool = True,
+    managed_files_path: str | None = None,
 ) -> dict[str, Service]:
-    """Build the merged service catalog for a repository."""
+    """Build the resolved service registry for a repository."""
+    base_section = load_repo_config(use_marketplace=True)
     section = section or {}
+
+    if section.get("use_marketplace_config") is False:
+        effective_section: dict[str, Any] = dict(section)
+    else:
+        effective_section = dict(base_section)
+        effective_section.update(section)
+        merged_defs: dict[str, Any] = {}
+        base_defs = base_section.get("service_definitions")
+        if isinstance(base_defs, dict):
+            merged_defs.update(base_defs)
+        override_defs = section.get("service_definitions")
+        if isinstance(override_defs, dict):
+            merged_defs.update(override_defs)
+        if merged_defs:
+            effective_section["service_definitions"] = merged_defs
+
     raw: dict[str, Any] = {}
-    base_dirs: list[Path] = [root]
 
-    if include_defaults and DEFAULT_CATALOG_PATH.is_file():
-        defaults = load_json(DEFAULT_CATALOG_PATH)
-        raw.update(defaults.get("services", defaults))
-        base_dirs.append(DEFAULT_CATALOG_PATH.parent)
+    path_value = managed_files_path if managed_files_path is not None else effective_section.get("managed_files_path")
+    if path_value in (None, ""):
+        path_value = ".github/managed-files"
+    rel_managed_path = Path(str(path_value))
+    if rel_managed_path.is_absolute() or ".." in rel_managed_path.parts:
+        raise ConfigError(
+            f"managed_files_path must be a relative path inside the repo: {path_value}"
+        )
+    managed_files_dir = root / rel_managed_path
 
-    for catalog_path in catalog_paths:
-        data = load_json(catalog_path)
-        raw.update(data.get("services", data))
-        base_dirs.append(catalog_path.parent)
+    # `content_file` sources for repo/global service_definitions come from
+    # managed_files_path. Destination is still set explicitly per service via
+    # files[].path.
+    base_dirs: list[Path] = [managed_files_dir]
 
-    overrides = section.get("service_definitions") or {}
+    overrides = effective_section.get("service_definitions") or {}
     if not isinstance(overrides, dict):
         raise ConfigError("'service_definitions' must be a JSON object keyed by service name")
     raw.update(overrides)
@@ -187,7 +202,10 @@ def resolve_services(
     if names in (["*"], ["all"]):
         names = sorted(name for name, service in catalog.items() if not service.includes)
 
-    disabled = {str(name) for name in section.get("disabled_services", [])}
+    disabled = {
+        *(str(name) for name in section.get("disabled_services", [])),
+        *(str(name) for name in section.get("exclude_services", [])),
+    }
     resolved: list[Service] = []
     unknown: list[str] = []
     _expand(names, catalog, disabled, resolved, unknown, depth=0)

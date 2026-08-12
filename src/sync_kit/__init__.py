@@ -7,13 +7,7 @@ Public surface:
 
 from __future__ import annotations
 
-from .catalog import (
-    DEFAULT_CATALOG_PATH,
-    check_conflicts,
-    load_catalog,
-    parse_service,
-    resolve_services,
-)
+from .catalog import check_conflicts, load_catalog, parse_service, resolve_services
 from .config import (
     CONFIG_SECTION,
     DEFAULT_CONFIG_NAMES,
@@ -30,7 +24,6 @@ __version__ = "1.0.0"
 
 __all__ = [
     "CONFIG_SECTION",
-    "DEFAULT_CATALOG_PATH",
     "DEFAULT_CONFIG_NAMES",
     "DEFAULT_NAMESPACE",
     "Change",

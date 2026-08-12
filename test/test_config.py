@@ -23,6 +23,12 @@ def test_finds_default_config_name(repo):
     assert find_config(repo.root).name == "bos-universal-config.json"
 
 
+def test_prefers_dotgithub_universal_config_when_both_exist(repo):
+    repo.write_config({"services": ["common"]}, name="bos-universal-config.json")
+    preferred = repo.write_config({"services": ["python"]}, name=".github/bos-universal-config.json")
+    assert find_config(repo.root) == preferred
+
+
 def test_returns_none_when_no_config_present(repo):
     assert find_config(repo.root) is None
 
@@ -46,7 +52,7 @@ def test_non_object_root_raises(repo):
 
 def test_section_defaults_to_root_object(repo):
     path = repo.write("managed-file-sync.json", json.dumps({"services": ["common"]}))
-    assert load_repo_config(path)["services"] == ["common"]
+    assert load_repo_config(path, use_marketplace=False)["services"] == ["common"]
 
 
 def test_no_config_file_yields_empty_section():
@@ -90,7 +96,83 @@ def test_builtin_variables_from_github_env(monkeypatch):
     variables = builtin_variables()
     assert variables["owner"] == "example-org"
     assert variables["repo"] == "demo"
+    assert variables["project_name"] == "demo"
     assert variables["year"].isdigit()
+
+
+def test_builtin_runner_variables_default_to_fallback(monkeypatch):
+    monkeypatch.delenv("DEFAULT_RUNNER", raising=False)
+    monkeypatch.delenv("RUNNER_X64", raising=False)
+    monkeypatch.delenv("RUNNER_ARM64", raising=False)
+
+    variables = builtin_variables()
+
+    assert variables["fallback_default_runner"] == "ubuntu-latest"
+    assert variables["DEFAULT_RUNNER"] == "ubuntu-latest"
+    assert variables["RUNNER_X64"] == "ubuntu-latest"
+    assert variables["RUNNER_ARM64"] == "ubuntu-latest"
+
+
+def test_builtin_runner_variables_use_valid_env_values(monkeypatch):
+    monkeypatch.setenv("DEFAULT_RUNNER", "ubuntu-latest")
+    monkeypatch.setenv("RUNNER_X64", "ubuntu-24.04")
+    monkeypatch.setenv("RUNNER_ARM64", "[\"ubuntu-24.04-arm\"]")
+
+    variables = builtin_variables()
+
+    assert variables["DEFAULT_RUNNER"] == "ubuntu-latest"
+    assert variables["RUNNER_X64"] == "ubuntu-24.04"
+    assert variables["RUNNER_ARM64"] == "[\"ubuntu-24.04-arm\"]"
+
+
+def test_builtin_runner_variables_invalid_env_values_fallback(monkeypatch):
+    monkeypatch.setenv("DEFAULT_RUNNER", "")
+    monkeypatch.setenv("RUNNER_X64", "ubuntu latest")
+    monkeypatch.setenv("RUNNER_ARM64", "[not-json]")
+
+    variables = builtin_variables()
+
+    assert variables["DEFAULT_RUNNER"] == "ubuntu-latest"
+    assert variables["RUNNER_X64"] == "ubuntu-latest"
+    assert variables["RUNNER_ARM64"] == "ubuntu-latest"
+
+
+def test_selected_runner_auto_detects_runtime_arch(monkeypatch):
+    monkeypatch.setenv("DEFAULT_RUNNER", "ubuntu-latest")
+    monkeypatch.setenv("RUNNER_X64", "ubuntu-24.04")
+    monkeypatch.setenv("RUNNER_ARM64", "ubuntu-24.04-arm")
+    monkeypatch.setenv("RUNNER_ARCH", "ARM64")
+    monkeypatch.setenv("MFS_WORKLOAD_ARCH", "auto")
+
+    variables = builtin_variables()
+
+    assert variables["WORKLOAD_ARCH"] == "auto"
+    assert variables["SELECTED_RUNNER"] == "ubuntu-24.04-arm"
+
+
+def test_selected_runner_explicit_override(monkeypatch):
+    monkeypatch.setenv("DEFAULT_RUNNER", "ubuntu-latest")
+    monkeypatch.setenv("RUNNER_X64", "ubuntu-24.04")
+    monkeypatch.setenv("RUNNER_ARM64", "ubuntu-24.04-arm")
+    monkeypatch.setenv("RUNNER_ARCH", "ARM64")
+    monkeypatch.setenv("MFS_WORKLOAD_ARCH", "x64")
+
+    variables = builtin_variables()
+
+    assert variables["WORKLOAD_ARCH"] == "x64"
+    assert variables["SELECTED_RUNNER"] == "ubuntu-24.04"
+
+
+def test_selected_runner_auto_invalid_runtime_falls_back_default(monkeypatch):
+    monkeypatch.setenv("DEFAULT_RUNNER", "ubuntu-latest")
+    monkeypatch.setenv("RUNNER_X64", "ubuntu-24.04")
+    monkeypatch.setenv("RUNNER_ARM64", "ubuntu-24.04-arm")
+    monkeypatch.setenv("RUNNER_ARCH", "MIPS")
+    monkeypatch.setenv("MFS_WORKLOAD_ARCH", "auto")
+
+    variables = builtin_variables()
+
+    assert variables["SELECTED_RUNNER"] == "ubuntu-latest"
 
 
 def test_marketplace_config_is_loaded_by_default():
@@ -111,7 +193,7 @@ def test_marketplace_config_can_be_disabled():
 
 
 def test_repo_config_merges_with_marketplace(repo):
-    """Repo config should merge (not replace) marketplace config for variables, but replace services."""
+    """Repo config appends services to marketplace by default and merges variables."""
     repo_path = repo.write(
         "bos-universal-config.json",
         json.dumps({
@@ -122,8 +204,8 @@ def test_repo_config_merges_with_marketplace(repo):
         }),
     )
     config = load_repo_config(repo_path, use_marketplace=True)
-    # Services should be replaced (not merged)
-    assert config["services"] == ["common", "prettier"]
+    # Services append to marketplace defaults by default.
+    assert config["services"] == ["common", "lf_line_endings", "markdownlint", "prettier"]
     # Marketplace marker_namespace should be inherited
     assert config.get("marker_namespace") == "managed-file-sync"
     # Variables should have both marketplace (empty) and repo-specific
@@ -133,7 +215,7 @@ def test_repo_config_merges_with_marketplace(repo):
 def test_global_and_repo_configs_merge(repo):
     """Global config should merge with repo config."""
     global_path = repo.write(
-        ".github/bos-managed-sync-global.json",
+        ".github/blackout-secure-managed-file-sync-global-config.json",
         json.dumps({
             "managed_file_sync": {
                 "services": ["common", "dotfiles"],
@@ -154,8 +236,8 @@ def test_global_and_repo_configs_merge(repo):
         }),
     )
     config = load_repo_config(repo_path, global_path, use_marketplace=False)
-    # Repo services override global
-    assert config["services"] == ["common", "prettier"]
+    # Repo services append to global by default.
+    assert config["services"] == ["common", "dotfiles", "prettier"]
     # Variables merge (org variables + repo variables)
     assert config["variables"]["org_name"] == "my-org"
     assert config["variables"]["project_name"] == "my-project"
@@ -164,7 +246,7 @@ def test_global_and_repo_configs_merge(repo):
 def test_marketplace_global_and_repo_cascade(repo):
     """All three tiers should merge in cascade."""
     global_path = repo.write(
-        ".github/bos-managed-sync-global.json",
+        ".github/blackout-secure-managed-file-sync-global-config.json",
         json.dumps({
             "managed_file_sync": {
                 "services": ["common", "dotfiles"],
@@ -183,7 +265,36 @@ def test_marketplace_global_and_repo_cascade(repo):
     )
     config = load_repo_config(repo_path, global_path, use_marketplace=True)
     # Marketplace + global + repo cascade
-    assert "prettier" in config["services"]  # Repo override
+    assert config["services"] == ["common", "lf_line_endings", "markdownlint", "dotfiles", "prettier"]
     assert config["variables"]["org_name"] == "my-org"  # Global
     assert config["variables"]["project_name"] == "my-project"  # Repo
     assert "dependabot.yml" in config.get("exclude_paths", [])  # Marketplace
+
+
+def test_use_marketplace_services_false_replaces_instead_of_appending(repo):
+    repo_path = repo.write(
+        "bos-universal-config.json",
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "use_marketplace_services": False,
+                    "services": ["prettier"],
+                }
+            }
+        ),
+    )
+    config = load_repo_config(repo_path, use_marketplace=True)
+    assert config["services"] == ["prettier"]
+
+
+def test_exclude_services_lists_are_appended(repo):
+    global_path = repo.write(
+        ".github/blackout-secure-managed-file-sync-global-config.json",
+        json.dumps({"managed_file_sync": {"exclude_services": ["common"]}}),
+    )
+    repo_path = repo.write(
+        "bos-universal-config.json",
+        json.dumps({"managed_file_sync": {"exclude_services": ["markdownlint"]}}),
+    )
+    config = load_repo_config(repo_path, global_path, use_marketplace=True)
+    assert config["exclude_services"] == ["common", "markdownlint"]
