@@ -73,6 +73,7 @@ jobs:
         id: config
         uses: blackoutsecure/bos-automation-hub/.github/actions/shared/universal-config@main
         with:
+          config_path: .github/bos-universal-config.json
           allow_missing: 'false'
           require_marketplace_enabled: 'true'
       # `uses:` refs cannot be dynamic, so resolve which hub branch this

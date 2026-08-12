@@ -74,6 +74,7 @@ def test_marketplace_kicker_supports_metadata_sync():
     ).read_text(encoding="utf-8")
 
     assert "options: [validate, name-check, release, metadata]" in workflow
+    assert "config_path: .github/bos-universal-config.json" in workflow
     assert "workflows/repo-metadata-sync.yml@main" in workflow
     assert "needs.release.outputs.tag_name" in workflow
     assert "REPO_ADMIN_PAT: ${{ secrets.REPO_ADMIN_PAT }}" in workflow
