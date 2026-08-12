@@ -15,13 +15,26 @@ branding:
   icon: 'refresh-cw'
 
 # Per-repo policy lives in `bos-universal-config.json` (auto-discovered at the
-# repo root, `managed_file_sync` section). The inputs below are the small set of
-# operator-level overrides for CI; everything else — which services run, the
-# canonical file contents, template variables — belongs in the JSON config or in
-# a shared catalog file.
+# repo root, `managed_file_sync` section). Marketplace best practices are
+# applied by default (tier 0); org config (tier 1) and repo config (tier 2)
+# override selectively. The inputs below are the small set of operator-level
+# overrides for CI; everything else — which services run, the canonical file
+# contents, template variables — belongs in the JSON config or in a shared
+# catalog file. See README.md for the four-tier config cascade.
 
 inputs:
   # ----- Config resolution -----
+  # NOTE: Marketplace config (tier 0) is always loaded by default. Org config
+  # (tier 1) and repo config (tier 2) override it. Set use_marketplace_config:
+  # false to disable marketplace tier (rarely needed).
+  global_config_path:
+    description: >-
+      Path to an org/hub-level config file, merged as the first tier. The repo
+      config (config_path) overrides this. Use to enforce org-wide standards
+      (managed_note, marker_namespace, default services, etc.) while allowing
+      repos to override specific settings.
+    required: false
+    default: ''
   config_path:
     description: >-
       Path to the repo config file. Defaults to auto-discovery of
@@ -109,6 +122,7 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working_directory }}
       env:
+        MFS_GLOBAL_CONFIG_PATH:  ${{ inputs.global_config_path }}
         MFS_CONFIG_PATH:         ${{ inputs.config_path }}
         MFS_SERVICES:            ${{ inputs.services }}
         MFS_CATALOG_PATH:        ${{ inputs.catalog_path }}
@@ -121,6 +135,10 @@ runs:
 
         # Built as an array so paths with spaces survive the hand-off.
         args=(--root .)
+
+        if [[ -n "${MFS_GLOBAL_CONFIG_PATH}" ]]; then
+          args+=(--global-config "${MFS_GLOBAL_CONFIG_PATH}")
+        fi
 
         if [[ -n "${MFS_CONFIG_PATH}" ]]; then
           args+=(--config "${MFS_CONFIG_PATH}")

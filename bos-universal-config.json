@@ -50,22 +50,6 @@
     },
     "extra_sync_paths": []
   },
-  "sync": {
-    "services": [
-      "common",
-      "lf_line_endings",
-      "dependabot_actions",
-      "dependabot_pip",
-      "python",
-      "markdownlint",
-      "shellcheckrc",
-      "bos_universal_config"
-    ],
-    "mode": "commit",
-    "commit_message": "chore: sync managed files from bos-automation-hub",
-    "runs_on": "ubuntu-latest",
-    "timeout_minutes": 5
-  },
   "general": {
     "action_test": {
       "python_versions": ["3.10", "3.11", "3.12"],
@@ -80,7 +64,9 @@
     }
   },
   "managed_file_sync": {
-    "//": "This repo's own managed files are owned by bos-automation-hub (see the `sync` section above), so no services are enabled here. `self-sync.yml` dogfoods the in-tree composite against a scratch repo.",
-    "services": []
+    "services": [
+      "python",
+      "bos_universal_config"
+    ]
   }
 }

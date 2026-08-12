@@ -8,6 +8,7 @@ without breaking older callers.
 
 from __future__ import annotations
 
+import importlib.resources
 import json
 import os
 import re
@@ -54,8 +55,19 @@ def find_config(root: Path, config_path: str | None = None) -> Path | None:
     return None
 
 
-def load_repo_config(config_file: Path | None) -> dict[str, Any]:
-    """Read the ``managed_file_sync`` section from a repo config file.
+def _deep_merge(base: dict, override: dict) -> dict:
+    """Recursively merge override dict into base (override wins for scalar conflicts)."""
+    result = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+def _load_config_section(config_file: Path | None) -> dict[str, Any]:
+    """Read the ``managed_file_sync`` section from a config file.
 
     Documents without that key are treated as the section itself, which keeps
     standalone ``managed-file-sync.json`` files simple.
@@ -69,6 +81,89 @@ def load_repo_config(config_file: Path | None) -> dict[str, Any]:
     if not isinstance(section, dict):
         raise ConfigError(f"'{CONFIG_SECTION}' must be a JSON object: {config_file}")
     return section
+
+
+def _load_marketplace_config() -> dict[str, Any]:
+    """Load the built-in marketplace best practices config.
+
+    Returns the ``managed_file_sync`` section from the bundled marketplace config.
+    This is shipped with the action as the base tier (tier 0).
+    """
+    try:
+        # Use importlib.resources to load the marketplace config bundled with the package
+        if hasattr(importlib.resources, "files"):
+            # Python 3.9+
+            files = importlib.resources.files("sync_kit")
+            marketplace_data = json.loads(files.joinpath("marketplace-config.json").read_text(encoding="utf-8"))
+        else:
+            # Fallback for older Python
+            import pkg_resources
+            marketplace_data = json.loads(
+                pkg_resources.resource_string("sync_kit", "marketplace-config.json").decode("utf-8")
+            )
+
+        section = marketplace_data.get(CONFIG_SECTION, marketplace_data)
+        if not isinstance(section, dict):
+            raise ConfigError("marketplace config must contain a 'managed_file_sync' object")
+        return section
+    except Exception as exc:
+        raise ConfigError(f"failed to load marketplace config: {exc}") from exc
+
+
+def load_repo_config(
+    config_file: Path | None = None,
+    global_config_file: Path | None = None,
+    use_marketplace: bool = True,
+) -> dict[str, Any]:
+    """Load and merge marketplace + global + repo config.
+
+    Cascade (lower tier wins for scalars, deep merge for objects):
+        1. Marketplace config (tier 0) — built-in best practices (default ON)
+        2. Global config (tier 1) — org/hub-level overrides
+        3. Repo config (tier 2) — repo-specific overrides
+
+    Args:
+        config_file: repo-specific config file path (optional).
+        global_config_file: org/hub-level config file path (optional).
+        use_marketplace: if True (default), merge marketplace config first.
+            Can be disabled by passing False or set in any config via use_marketplace_config: false.
+
+    Returns:
+        Merged ``managed_file_sync`` section from all applicable tiers, or {} if none provided.
+
+    Raises:
+        ConfigError: on invalid config file.
+    """
+    # Start with marketplace config if enabled
+    merged = {}
+    if use_marketplace:
+        marketplace_section = _load_marketplace_config()
+        merged = dict(marketplace_section)
+        # Check if any config disables marketplace (user override takes precedence)
+        if marketplace_section.get("use_marketplace_config") is False:
+            use_marketplace = False
+            merged = {}
+
+    # Merge global config on top
+    global_section = _load_config_section(global_config_file)
+    if global_section:
+        # Check if global config disables marketplace
+        if global_section.get("use_marketplace_config") is False:
+            merged = {}
+            use_marketplace = False
+        merged = _deep_merge(merged, global_section)
+
+    # Merge repo config on top
+    repo_section = _load_config_section(config_file)
+    if repo_section:
+        # Check if repo config disables marketplace
+        if repo_section.get("use_marketplace_config") is False:
+            if use_marketplace:
+                # Repo explicitly disables; restart from global only
+                merged = dict(global_section)
+        merged = _deep_merge(merged, repo_section)
+
+    return merged
 
 
 def parse_service_list(value: str | None) -> list[str]:

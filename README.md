@@ -135,6 +135,7 @@ The SHA for any tag is `git rev-list -n 1 v1.0.0` against this repo, or the
 <!-- BEGIN action-inputs -->
 | Input | Default | Description |
 | --- | --- | --- |
+| `global_config_path` | _(none)_ | Path to an org/hub-level config file, merged as the first tier. The repo config (config_path) overrides this. Use to enforce org-wide standards (managed_note, marker_namespace, default services, etc.) while allowing repos to override specific settings. |
 | `config_path` | _(none)_ | Path to the repo config file. Defaults to auto-discovery of `bos-universal-config.json`, `managed-file-sync.json`, or `.managed-file-sync.json` at the repo root. |
 | `services` | _(none)_ | Comma or space separated list of services to sync. Overrides the service list in the config. Use `*` to select every catalog service. |
 | `catalog_path` | _(none)_ | Optional path to an extra service catalog JSON file. Pass several by separating them with newlines. |
@@ -164,6 +165,286 @@ The SHA for any tag is `git rev-list -n 1 v1.0.0` against this repo, or the
 
 Exit behaviour: the step exits `0` when the tree is in sync, `1` when drift is
 detected with `fail_on_drift: 'true'`, and `2` on a config error.
+
+## 🏗️ Configuration inheritance and layering
+
+This action uses a **four-tier config cascade** with marketplace-curated best
+practices as the base, org-wide defaults as overrides, repo-specific config as
+further overrides, and CI-level workflow inputs as the final override. This
+pattern combines safety (best practices by default) with flexibility (override
+everything).
+
+### Four tiers of configuration
+
+The config is merged in cascade order (each tier overrides the lower ones):
+
+0. **Tier 0: Marketplace config** (built-in, default ON)  
+   Shipped with the action: best-practice services (`common`, `lf_line_endings`,
+   `markdownlint`), recommended exclusions (`dependabot.yml`, lock files, etc.),
+   standard marker namespace, and managed note. Explicitly enable/disable with
+   `use_marketplace_config: true|false` in any tier above it. Typically disabled
+   only for advanced customization.
+
+1. **Tier 1: Org-level global config** (`global_config_path` input)  
+   Org-wide defaults: additional services, org-specific marker namespace (rare),
+   org-wide managed note, shared variables (org name, license, support email).
+   Typically stored at `.github/bos-managed-sync-global.json` in a central
+   `.github` repo or organization. Optional; marketplace config works fine alone.
+
+2. **Tier 2: Repo-specific config** (`config_path` input)  
+   Repository overrides: additional services, repo-specific variables, local
+   metadata, file exclusions. Auto-discovered at repo root as
+   `bos-universal-config.json`, `managed-file-sync.json`, or
+   `.managed-file-sync.json`. Optional; repos inherit from marketplace + global
+   if not present.
+
+3. **Tier 3: Workflow input overrides** (`services` input)  
+   CI-level control: override the service list for a specific workflow run
+   without touching config files. Use for per-branch or per-environment
+   customization.
+
+### Merge strategy
+
+- **Scalars** (strings, numbers, booleans): lower tiers override upper tiers.
+- **Objects** (dicts): deep-merged, so you can override a single field without
+  repeating the whole object.
+- **Arrays** (service lists): tier 2/3 replaces tier 0/1 (not merged element-by-element).
+- **Disabling marketplace**: set `use_marketplace_config: false` in org or repo
+  config to remove tier 0 and merge only global+repo+workflow.
+
+### Recommended file paths
+
+- **Marketplace config**: `src/sync_kit/marketplace-config.json` (shipped with action, read-only)
+- **Org global config**: `.github/bos-managed-sync-global.json` (optional, shared across org)
+- **Repo config**: `bos-universal-config.json` (optional, per-repo)
+
+### What's in the marketplace config?
+
+The built-in `bos-sync-marketplace.json` includes:
+
+```json
+{
+  "managed_file_sync": {
+    "services": ["common", "lf_line_endings", "markdownlint"],
+    "exclude_paths": [
+      "dependabot.yml", ".dependabot/*",
+      "renovate.json", ".renovate.json",
+      "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
+      "poetry.lock"
+    ],
+    "marker_namespace": "managed-file-sync",
+    "managed_note": "Managed by Blackout Secure. See .github/bos-managed-sync-global.json and repo config."
+  }
+}
+```
+
+**Rationale for inclusions/exclusions**:
+- ✅ **`common`, `lf_line_endings`, `markdownlint`**: universally safe linters
+  and standardization; no risk of breaking project-specific config.
+- ❌ **`dependabot.yml`, `renovate.json`**: auto-update config is per-repo;
+  syncing it causes divergence and breaks dependency update automation.
+- ❌ **Lock files (`package-lock.json`, etc.)**: never sync lock files; they're
+  generated artifacts with project-specific dependency trees.
+
+### When to use each tier
+
+**Marketplace config** (tier 0):
+- Ships with the action; defaults to ON.
+- Provides industry best practices out of the box.
+- Covers the 80% case for most repos (linters, line endings).
+- Disable only for advanced use cases.
+
+**Org global config** (tier 1):
+- Org name, license, support email (template variables).
+- Additional org-wide services (`dotfiles`, `codeowners`, `license`).
+- Org-wide managed note.
+- Rarely needs to change from repo to repo.
+
+**Repo config** (tier 2):
+- Repo-specific services (`prettier` for JS, `shellcheck` for shell scripts).
+- Project-local variables (`project_name`, `repo_description`).
+- Repo-specific file exclusions.
+- Service customizations unique to this project.
+
+**Workflow input** (tier 3):
+- Temporary per-run control (e.g., `services: 'common'` to test just the base).
+- Per-branch logic (different services for dev vs. release branches).
+- Debugging and CI optimization.
+
+### Examples
+
+#### Example 1: Marketplace only (default)
+
+No configs needed; the marketplace defaults apply:
+
+```yaml
+- uses: blackoutsecure/bos-managed-file-sync-action@v1
+```
+
+Result: `common`, `lf_line_endings`, `markdownlint` synced, lock files excluded.
+
+#### Example 2: Marketplace + Org config
+
+Create `.github/bos-managed-sync-global.json`:
+
+```json
+{
+  "managed_file_sync": {
+    "services": ["common", "lf_line_endings", "markdownlint", "dotfiles"],
+    "variables": {
+      "org_name": "my-org",
+      "support_email": "platform-team@my-org.com",
+      "license": "Apache-2.0"
+    }
+  }
+}
+```
+
+Workflow:
+
+```yaml
+- uses: blackoutsecure/bos-managed-file-sync-action@v1
+  with:
+    global_config_path: '.github/bos-managed-sync-global.json'
+```
+
+Result: marketplace config merged with org config (org config overrides). All
+repos in org get `dotfiles` + org variables automatically.
+
+#### Example 3: Marketplace + Org + Repo config
+
+Same as above, plus create `bos-universal-config.json` in the repo:
+
+```json
+{
+  "managed_file_sync": {
+    "services": ["common", "lf_line_endings", "markdownlint", "dotfiles", "prettier"],
+    "variables": {
+      "project_name": "my-typescript-project"
+    }
+  }
+}
+```
+
+Workflow:
+
+```yaml
+- uses: blackoutsecure/bos-managed-file-sync-action@v1
+  with:
+    global_config_path: '.github/bos-managed-sync-global.json'
+    config_path: 'bos-universal-config.json'
+```
+
+Result: marketplace → org → repo merged (each tier overrides the previous).
+This repo gets `prettier` in addition to org services, with its own project name
+variable.
+
+#### Example 4: Disable marketplace for advanced setup
+
+If you prefer complete control, disable marketplace and build your own base:
+
+```json
+{
+  "managed_file_sync": {
+    "use_marketplace_config": false,
+    "services": ["common"],
+    "marker_namespace": "my-sync",
+    "variables": {}
+  }
+}
+```
+
+Result: only `common` synced; marketplace best practices excluded. Use this only
+if you have a good reason to deviate from recommended practices.
+
+### How to set it up
+
+#### Quickest start (marketplace only)
+
+```yaml
+- uses: blackoutsecure/bos-managed-file-sync-action@v1
+```
+
+That's it. Marketplace config applies by default.
+
+#### With org-wide defaults
+
+1. In your `.github` repo (or any central location), create
+   `.github/bos-managed-sync-global.json`:
+
+   ```json
+   {
+     "managed_file_sync": {
+       "services": ["common", "lf_line_endings", "markdownlint", "dotfiles"],
+       "variables": {
+         "org_name": "my-org",
+         "support_email": "platform-team@my-org.com"
+       }
+     }
+   }
+   ```
+
+2. In every consuming repo, use:
+
+   ```yaml
+   - uses: blackoutsecure/bos-managed-file-sync-action@v1
+     with:
+       global_config_path: '.github/bos-managed-sync-global.json'
+   ```
+
+3. (Optional) Create a minimal `bos-universal-config.json` in repos that need
+   unique services:
+
+   ```json
+   {
+     "managed_file_sync": {
+       "services": ["common", "lf_line_endings", "markdownlint", "dotfiles", "prettier"],
+       "variables": {"project_name": "my-project"}
+     }
+   }
+   ```
+
+#### With repo-specific overrides only
+
+If you don't need org-wide config, just use repo config:
+
+```yaml
+- uses: blackoutsecure/bos-managed-file-sync-action@v1
+  with:
+    config_path: 'bos-universal-config.json'
+```
+
+Marketplace applies automatically; repo config adds/overrides services and
+variables.
+
+### Precedence rules
+
+When a field is defined in multiple tiers:
+- **Services array**: tier 2 (repo) completely replaces tier 0 (marketplace).
+  To keep marketplace services and add more, repeat them:
+  ```json
+  {"services": ["common", "lf_line_endings", "markdownlint", "prettier"]}
+  ```
+- **Variables object**: merged. Tier 2 adds to tier 0's variables.
+- **Exclude paths**: repo config replaces marketplace exclusions (not merged).
+- **Marker namespace**: tier 2 replaces tier 0 (rare).
+- **Managed note**: tier 1 (org) often sets this; tier 2 can override.
+
+### Disabling marketplace config
+
+To use only org + repo configs without marketplace best practices:
+
+```json
+{
+  "managed_file_sync": {
+    "use_marketplace_config": false,
+    "services": ["common"]
+  }
+}
+```
+
+Set this in org or repo config. This is rarely needed; marketplace defaults are
+conservative and safe.
 
 ## 📦 Default service catalog
 
