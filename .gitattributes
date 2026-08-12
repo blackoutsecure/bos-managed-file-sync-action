@@ -12,3 +12,16 @@
 *.ico  binary
 *.pdf  binary
 # <<< bos-automation-hub:lf_line_endings <<<
+
+# >>> managed-file-sync:lf_line_endings >>>
+# Managed by Blackout Secure. Best practices applied via marketplace config, customized in .github/blackout-secure-managed-file-sync-global-config.json and .github/bos-universal-config.json.
+* text=auto eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+# <<< managed-file-sync:lf_line_endings <<<
