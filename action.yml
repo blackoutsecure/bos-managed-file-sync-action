@@ -1,0 +1,157 @@
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Blackout Secure Managed File Sync
+# Copyright © 2025-2026 Blackout Secure
+# Licensed under Apache License 2.0
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+name: 'Blackout Secure Managed File Sync'
+# MP010: keep <= 125 chars; full feature list lives in README.md.
+description: >-
+  Sync canonical repo files and managed blocks across repositories with drift detection and dry-run checks.
+author: 'Blackout Secure'
+
+branding:
+  color: 'blue'
+  icon: 'refresh-cw'
+
+# Per-repo policy lives in `bos-universal-config.json` (auto-discovered at the
+# repo root, `managed_file_sync` section). The inputs below are the small set of
+# operator-level overrides for CI; everything else — which services run, the
+# canonical file contents, template variables — belongs in the JSON config or in
+# a shared catalog file.
+
+inputs:
+  # ----- Config resolution -----
+  config_path:
+    description: >-
+      Path to the repo config file. Defaults to auto-discovery of
+      `bos-universal-config.json`, `managed-file-sync.json`, or
+      `.managed-file-sync.json` at the repo root.
+    required: false
+    default: ''
+  services:
+    description: >-
+      Comma or space separated list of services to sync. Overrides the service
+      list in the config. Use `*` to select every catalog service.
+    required: false
+    default: ''
+  catalog_path:
+    description: >-
+      Optional path to an extra service catalog JSON file. Pass several by
+      separating them with newlines.
+    required: false
+    default: ''
+  use_default_catalog:
+    description: '`true` to load the built-in vendor-neutral service catalog.'
+    required: false
+    default: 'true'
+
+  # ----- Scope -----
+  working_directory:
+    description: 'Repository root to sync.'
+    required: false
+    default: '.'
+
+  # ----- Failure policy -----
+  dry_run:
+    description: '`true` to report what would change without writing any file.'
+    required: false
+    default: 'false'
+  fail_on_drift:
+    description: '`true` to exit non-zero when managed files are out of sync.'
+    required: false
+    default: 'false'
+  show_diff:
+    description: '`true` to print a unified diff for every changed file in the job log.'
+    required: false
+    default: 'true'
+
+  # ----- Tuning -----
+  python_version:
+    description: 'Python version installed on the runner for the sync step.'
+    required: false
+    default: '3.12'
+
+outputs:
+  changed:
+    description: '`true` when managed files changed (or would change in dry-run mode).'
+    value: ${{ steps.sync.outputs.changed }}
+  changed_count:
+    description: 'Number of changed files.'
+    value: ${{ steps.sync.outputs.changed_count }}
+  changed_files:
+    description: 'Newline separated list of changed file paths.'
+    value: ${{ steps.sync.outputs.changed_files }}
+  changed_files_json:
+    description: 'JSON array of changed file paths.'
+    value: ${{ steps.sync.outputs.changed_files_json }}
+
+runs:
+  using: composite
+  steps:
+    # ----- 0. Install the kit itself so `bos-sync` is on PATH ---------
+    # SHA pin per Marketplace SC002 hygiene; bump via Dependabot.
+    - name: Set up Python
+      uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+      with:
+        python-version: ${{ inputs.python_version }}
+
+    - name: Install bos-managed-file-sync
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 -m pip install --quiet --upgrade pip
+        python3 -m pip install --quiet "${GITHUB_ACTION_PATH}"
+
+    # ----- 1. Reconcile the working tree ------------------------------
+    - id: sync
+      name: Sync managed files
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      env:
+        MFS_CONFIG_PATH:         ${{ inputs.config_path }}
+        MFS_SERVICES:            ${{ inputs.services }}
+        MFS_CATALOG_PATH:        ${{ inputs.catalog_path }}
+        MFS_USE_DEFAULT_CATALOG: ${{ inputs.use_default_catalog }}
+        MFS_DRY_RUN:             ${{ inputs.dry_run }}
+        MFS_FAIL_ON_DRIFT:       ${{ inputs.fail_on_drift }}
+        MFS_SHOW_DIFF:           ${{ inputs.show_diff }}
+      run: |
+        set -euo pipefail
+
+        # Built as an array so paths with spaces survive the hand-off.
+        args=(--root .)
+
+        if [[ -n "${MFS_CONFIG_PATH}" ]]; then
+          args+=(--config "${MFS_CONFIG_PATH}")
+        fi
+
+        if [[ -n "${MFS_SERVICES}" ]]; then
+          args+=(--services "${MFS_SERVICES}")
+        fi
+
+        if [[ -n "${MFS_CATALOG_PATH}" ]]; then
+          while IFS= read -r catalog; do
+            if [[ -n "${catalog}" ]]; then
+              args+=(--catalog "${catalog}")
+            fi
+          done <<< "${MFS_CATALOG_PATH}"
+        fi
+
+        if [[ "${MFS_USE_DEFAULT_CATALOG}" != "true" ]]; then
+          args+=(--no-default-catalog)
+        fi
+
+        if [[ "${MFS_DRY_RUN}" == "true" ]]; then
+          args+=(--dry-run)
+        fi
+
+        if [[ "${MFS_FAIL_ON_DRIFT}" == "true" ]]; then
+          args+=(--fail-on-drift)
+        fi
+
+        if [[ "${MFS_SHOW_DIFF}" != "true" ]]; then
+          args+=(--no-diff)
+        fi
+
+        bos-sync apply "${args[@]}"

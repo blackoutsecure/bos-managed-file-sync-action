@@ -1,0 +1,61 @@
+# Dependabot config for bos-managed-file-sync-action.
+#
+# This repo follows the Blackout Secure Marketplace Action dev/main
+# split:
+#   * `dev`  — default branch. Source of truth: workflow files and all
+#              development land here, and Dependabot PRs target it so CI
+#              runs against them.
+#   * `main` — curated Marketplace artifact (no workflow files). Receives
+#              allowlist promotes from `dev` via the hub release pipeline.
+#
+# Dependabot reads its config only from the default branch (`dev`). The
+# explicit `target-branch: dev` below keeps PRs on `dev` even if the
+# default branch is ever flipped back to `main`.
+
+version: 2
+updates:
+
+# >>> bos-automation-hub:dependabot_actions >>>
+# Managed by https://github.com/blackoutsecure/bos-automation-hub — do not edit between markers.
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+      include: scope
+    labels:
+      - dependencies
+      - github-actions
+    groups:
+      docker-actions:
+        patterns:
+          - "docker/*"
+      github-actions:
+        patterns:
+          - "actions/*"
+# <<< bos-automation-hub:dependabot_actions <<<
+
+# >>> bos-automation-hub:dependabot_pip >>>
+# Managed by https://github.com/blackoutsecure/bos-automation-hub — do not edit between markers.
+  - package-ecosystem: pip
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+      include: scope
+    labels:
+      - dependencies
+      - python
+# <<< bos-automation-hub:dependabot_pip <<<
