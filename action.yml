@@ -1,11 +1,4 @@
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Blackout Secure Managed File Sync
-# Copyright © 2025-2026 Blackout Secure
-# Licensed under Apache License 2.0
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 name: 'Blackout Secure Managed File Sync'
-# MP010: keep <= 125 chars; full feature list lives in README.md.
 description: >-
   Sync canonical repo files and managed blocks across repositories with drift detection and dry-run checks.
 author: 'Blackout Secure'
@@ -14,19 +7,7 @@ branding:
   color: 'blue'
   icon: 'refresh-cw'
 
-# Per-repo policy lives in `.github/bos-universal-config.json` (preferred,
-# `managed_file_sync` section). Marketplace best practices are
-# applied by default (tier 0); org config (tier 1) and repo config (tier 2)
-# override selectively. The inputs below are the small set of operator-level
-# overrides for CI; everything else — which services run, the canonical file
-# contents, template variables — belongs in the JSON config. See README.md for
-# the four-tier config cascade.
-
 inputs:
-  # ----- Config resolution -----
-  # NOTE: Marketplace config (tier 0) is always loaded by default. Org config
-  # (tier 1) and repo config (tier 2) override it. Set use_marketplace_config:
-  # false to disable marketplace tier (rarely needed).
   use_global_config:
     description: >-
       `true` to merge an org/hub-level global config. Disabled by default.
@@ -65,13 +46,11 @@ inputs:
       `arm64`, or `default`. `auto` uses `RUNNER_ARCH` when available.
     required: false
     default: 'auto'
-  # ----- Scope -----
   working_directory:
     description: 'Repository root to sync.'
     required: false
     default: '.'
 
-  # ----- Failure policy -----
   dry_run:
     description: '`true` to report what would change without writing any file.'
     required: false
@@ -85,7 +64,6 @@ inputs:
     required: false
     default: 'true'
 
-  # ----- Tuning -----
   python_version:
     description: 'Python version installed on the runner for the sync step.'
     required: false
@@ -108,8 +86,6 @@ outputs:
 runs:
   using: composite
   steps:
-    # ----- 0. Install the kit itself so `bos-sync` is on PATH ---------
-    # SHA pin per Marketplace SC002 hygiene; bump via Dependabot.
     - name: Set up Python
       uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
       with:
@@ -122,7 +98,6 @@ runs:
         python3 -m pip install --quiet --upgrade pip
         python3 -m pip install --quiet "${GITHUB_ACTION_PATH}"
 
-    # ----- 1. Reconcile the working tree ------------------------------
     - id: sync
       name: Sync managed files
       shell: bash
@@ -140,7 +115,6 @@ runs:
       run: |
         set -euo pipefail
 
-        # Built as an array so paths with spaces survive the hand-off.
         args=(--root .)
 
         if [[ "${MFS_USE_GLOBAL_CONFIG}" == "true" ]]; then

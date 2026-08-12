@@ -298,3 +298,21 @@ def test_exclude_services_lists_are_appended(repo):
     )
     config = load_repo_config(repo_path, global_path, use_marketplace=True)
     assert config["exclude_services"] == ["common", "markdownlint"]
+
+
+def test_use_marketplace_services_must_be_boolean(repo):
+    repo_path = repo.write(
+        "bos-universal-config.json",
+        json.dumps({"managed_file_sync": {"use_marketplace_services": "false", "services": ["common"]}}),
+    )
+    with pytest.raises(ConfigError):
+        load_repo_config(repo_path, use_marketplace=True)
+
+
+def test_exclude_services_must_be_list(repo):
+    repo_path = repo.write(
+        "bos-universal-config.json",
+        json.dumps({"managed_file_sync": {"exclude_services": "common"}}),
+    )
+    with pytest.raises(ConfigError):
+        load_repo_config(repo_path, use_marketplace=True)

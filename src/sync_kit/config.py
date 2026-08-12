@@ -20,6 +20,7 @@ from .errors import ConfigError
 from .markers import DEFAULT_NAMESPACE
 
 CONFIG_SECTION = "managed_file_sync"
+MARKETPLACE_CONFIG_FILE = "blackout-secure-managed-file-sync-marketplace-config.json"
 DEFAULT_CONFIG_PATHS = (
     ".github/bos-universal-config.json",
     "bos-universal-config.json",
@@ -86,13 +87,35 @@ def _append_unique(base_values: list[Any], extra_values: list[Any]) -> list[str]
     return merged
 
 
+def _bool_field(value: Any, key: str, default: bool) -> bool:
+    """Read a strict boolean config field."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    raise ConfigError(f"'{key}' must be true or false")
+
+
+def _string_list(value: Any, key: str) -> list[str]:
+    """Normalize a config list to strings, validating the type."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ConfigError(f"'{key}' must be a JSON array")
+    return [str(item) for item in value]
+
+
 def _merge_section(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """Deep-merge a config tier with service/exclusion list semantics."""
     merged = _deep_merge(base, override)
 
     base_services = base.get("services")
     override_services = override.get("services")
-    use_marketplace_services = bool(override.get("use_marketplace_services", True))
+    use_marketplace_services = _bool_field(
+        override.get("use_marketplace_services"),
+        "use_marketplace_services",
+        True,
+    )
     if isinstance(base_services, list) and isinstance(override_services, list):
         merged["services"] = (
             _append_unique(base_services, override_services)
@@ -101,14 +124,16 @@ def _merge_section(base: dict[str, Any], override: dict[str, Any]) -> dict[str, 
         )
     elif isinstance(override_services, list):
         merged["services"] = [str(item) for item in override_services]
+    elif override_services is not None and not isinstance(override_services, dict):
+        raise ConfigError("'services' must be a list or an object of name -> bool")
 
     for key in ("exclude_services", "disabled_services"):
         base_value = base.get(key)
         override_value = override.get(key)
         if isinstance(base_value, list) and isinstance(override_value, list):
             merged[key] = _append_unique(base_value, override_value)
-        elif isinstance(override_value, list):
-            merged[key] = [str(item) for item in override_value]
+        elif override_value is not None:
+            merged[key] = _string_list(override_value, key)
 
     return merged
 
@@ -142,17 +167,10 @@ def _load_marketplace_config() -> dict[str, Any]:
             # Python 3.9+
             files = importlib.resources.files("sync_kit")
             marketplace_data = json.loads(
-                files.joinpath("blackout-secure-managed-file-sync-marketplace-config.json").read_text(encoding="utf-8")
+                files.joinpath(MARKETPLACE_CONFIG_FILE).read_text(encoding="utf-8")
             )
-        else:
-            # Fallback for older Python
-            import pkg_resources
-            marketplace_data = json.loads(
-                pkg_resources.resource_string(
-                    "sync_kit",
-                    "blackout-secure-managed-file-sync-marketplace-config.json",
-                ).decode("utf-8")
-            )
+        else:  # pragma: no cover - files() is available on supported Python versions
+            raise ConfigError("Python runtime does not support importlib.resources.files")
 
         section = marketplace_data.get(CONFIG_SECTION, marketplace_data)
         if not isinstance(section, dict):

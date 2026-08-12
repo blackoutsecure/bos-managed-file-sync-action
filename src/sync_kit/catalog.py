@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .config import load_repo_config
+from .config import find_config, load_repo_config
 from .errors import ConfigError
 
 VALID_MODES = ("block", "file", "init", "absent")
@@ -136,25 +136,23 @@ def load_catalog(
     root: Path,
     section: dict[str, Any] | None = None,
     managed_files_path: str | None = None,
+    section_is_merged: bool = False,
 ) -> dict[str, Service]:
     """Build the resolved service registry for a repository."""
-    base_section = load_repo_config(use_marketplace=True)
-    section = section or {}
-
-    if section.get("use_marketplace_config") is False:
-        effective_section: dict[str, Any] = dict(section)
+    if section_is_merged:
+        effective_section = dict(section or {})
     else:
-        effective_section = dict(base_section)
-        effective_section.update(section)
-        merged_defs: dict[str, Any] = {}
-        base_defs = base_section.get("service_definitions")
-        if isinstance(base_defs, dict):
-            merged_defs.update(base_defs)
-        override_defs = section.get("service_definitions")
-        if isinstance(override_defs, dict):
-            merged_defs.update(override_defs)
-        if merged_defs:
-            effective_section["service_definitions"] = merged_defs
+        config_file = find_config(root)
+        effective_section = load_repo_config(config_file=config_file, use_marketplace=True)
+        if section:
+            if section.get("use_marketplace_config") is False:
+                effective_section = dict(section)
+            else:
+                base_defs = effective_section.get("service_definitions")
+                override_defs = section.get("service_definitions")
+                effective_section = {**effective_section, **section}
+                if isinstance(base_defs, dict) and isinstance(override_defs, dict):
+                    effective_section["service_definitions"] = {**base_defs, **override_defs}
 
     raw: dict[str, Any] = {}
 

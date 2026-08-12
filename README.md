@@ -88,7 +88,7 @@ jobs:
 ```
 
 That's it. With no config file at all, the `services` input alone is enough —
-the action resolves the built-in catalog, reconciles the working tree, and
+the action resolves the built-in service registry, reconciles the working tree, and
 tells you exactly what moved.
 
 ### Drift check on pull requests
@@ -253,31 +253,6 @@ The built-in `bos-sync-marketplace.json` includes:
 - ❌ **Lock files (`package-lock.json`, etc.)**: never sync lock files; they're
   generated artifacts with project-specific dependency trees.
 
-### When to use each tier
-
-**Marketplace config** (tier 0):
-- Ships with the action; defaults to ON.
-- Provides industry best practices out of the box.
-- Covers the 80% case for most repos (linters, line endings).
-- Disable only for advanced use cases.
-
-**Org global config** (tier 1):
-- Org name, license, support email (template variables).
-- Additional org-wide services (`dotfiles`, `codeowners`, `license`).
-- Org-wide managed note.
-- Rarely needs to change from repo to repo.
-
-**Repo config** (tier 2):
-- Repo-specific services (`prettier` for JS, `shellcheck` for shell scripts).
-- Project-local variables (`project_name`, `repo_description`).
-- Repo-specific file exclusions.
-- Service customizations unique to this project.
-
-**Workflow input** (tier 3):
-- Temporary per-run control (e.g., `services: 'common'` to test just the base).
-- Per-branch logic (different services for dev vs. release branches).
-- Debugging and CI optimization.
-
 ### Examples
 
 #### Example 1: Marketplace only (default)
@@ -366,67 +341,6 @@ If you prefer complete control, disable marketplace and build your own base:
 Result: only `common` synced; marketplace best practices excluded. Use this only
 if you have a good reason to deviate from recommended practices.
 
-### How to set it up
-
-#### Quickest start (marketplace only)
-
-```yaml
-- uses: blackoutsecure/bos-managed-file-sync-action@v1
-```
-
-That's it. Marketplace config applies by default.
-
-#### With org-wide defaults
-
-1. In your `.github` repo (or any central location), create
-  `.github/blackout-secure-managed-file-sync-global-config.json`:
-
-   ```json
-   {
-     "managed_file_sync": {
-       "services": ["common", "lf_line_endings", "markdownlint", "dotfiles"],
-       "variables": {
-         "org_name": "my-org",
-         "support_email": "platform-team@my-org.com"
-       }
-     }
-   }
-   ```
-
-2. In every consuming repo, use:
-
-   ```yaml
-   - uses: blackoutsecure/bos-managed-file-sync-action@v1
-     with:
-      use_global_config: 'true'
-      global_config_path: '.github/blackout-secure-managed-file-sync-global-config.json'
-   ```
-
-3. (Optional) Create a minimal `bos-universal-config.json` in repos that need
-   unique services:
-
-   ```json
-   {
-     "managed_file_sync": {
-       "services": ["common", "lf_line_endings", "markdownlint", "dotfiles", "prettier"],
-       "variables": {"project_name": "my-project"}
-     }
-   }
-   ```
-
-#### With repo-specific overrides only
-
-If you don't need org-wide config, just use repo config:
-
-```yaml
-- uses: blackoutsecure/bos-managed-file-sync-action@v1
-  with:
-    config_path: 'bos-universal-config.json'
-```
-
-Marketplace applies automatically; repo config adds/overrides services and
-variables.
-
 ### Precedence rules
 
 When a field is defined in multiple tiers:
@@ -502,7 +416,7 @@ To use only org + repo configs without marketplace best practices:
 Set this in org or repo config. This is rarely needed; marketplace defaults are
 conservative and safe.
 
-## 📦 Default service catalog
+## 📦 Built-in services
 
 Every service below ships with the action and can be overridden per repo. The
 registry is deliberately vendor neutral — org-specific services belong in your
@@ -816,6 +730,9 @@ Recommended baseline:
 - **Protect central config.** Anyone who can change central global/repo config
   can change files in every repo that consumes it. Protect those repos and pin
   this action to a tag or SHA.
+- **No secrets in config.** Keep credentials out of `managed_file_sync`
+  configs and templates. Use GitHub Secrets for sensitive values and GitHub
+  Variables for non-sensitive shared values.
 - **Untrusted pull requests.** Run drift checks with `pull_request` (never
   `pull_request_target`) and no write permissions.
 

@@ -111,6 +111,7 @@ class _Plan:
             root=self.root,
             section=self.section,
             managed_files_path=args.managed_files_path,
+            section_is_merged=True,
         )
         self.services = resolve_services(self.catalog, self.section, parse_service_list(args.services))
         self.namespace = marker_namespace(self.section)
