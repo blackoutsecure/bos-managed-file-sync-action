@@ -30,8 +30,7 @@
       "src/**",
       "test/**",
       "scripts/**",
-      "pyproject.toml",
-      "requirements-dev.txt"
+      "pyproject.toml"
     ],
     "blocked_paths": [
       ".github/workflows/"
@@ -54,7 +53,6 @@
     "action_test": {
       "python_versions": ["3.10", "3.11", "3.12"],
       "os_matrix": ["ubuntu-latest"],
-      "requirements_file": "requirements-dev.txt",
       "pytest_args": "-q",
       "enable_smoke_test": false,
       "smoke_trigger": "push-dev",

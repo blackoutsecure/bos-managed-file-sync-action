@@ -157,10 +157,9 @@ def load_repo_config(
     repo_section = _load_config_section(config_file)
     if repo_section:
         # Check if repo config disables marketplace
-        if repo_section.get("use_marketplace_config") is False:
-            if use_marketplace:
-                # Repo explicitly disables; restart from global only
-                merged = dict(global_section)
+        if repo_section.get("use_marketplace_config") is False and use_marketplace:
+            # Repo explicitly disables; restart from global only
+            merged = dict(global_section)
         merged = _deep_merge(merged, repo_section)
 
     return merged
