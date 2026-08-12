@@ -1,0 +1,281 @@
+{
+  "managed_file_sync": {
+    "description": "Blackout Secure marketplace best practices — shipped with the action. Base template path defaults to .github/managed-files via managed_files_path. Runner defaults are provided here and can be overridden by org-level (global) or repo-level configs, with runtime detection/fallback in code. Disable with use_marketplace_config: false.",
+    "use_marketplace_config": true,
+    "managed_files_path": ".github/managed-files",
+    "marker_namespace": "managed-file-sync",
+    "managed_note": "Managed by Blackout Secure. Best practices applied via marketplace config, customized in .github/blackout-secure-managed-file-sync-global-config.json and .github/bos-universal-config.json.",
+    "services": [
+      "common",
+      "lf_line_endings",
+      "markdownlint"
+    ],
+    "exclude_services": [],
+    "exclude_paths": [
+      "dependabot.yml",
+      ".dependabot/*",
+      "renovate.json",
+      ".renovate.json",
+      ".renovaterc*",
+      "package-lock.json",
+      "yarn.lock",
+      "pnpm-lock.yaml",
+      "Gemfile.lock",
+      "poetry.lock"
+    ],
+    "variables": {
+      "fallback_default_runner": "ubuntu-latest"
+    },
+    "service_definitions": {
+      "common": {
+        "mode": "block",
+        "description": "Common ignore rules shared by most repositories.",
+        "files": [
+          {
+            "path": ".gitignore",
+            "content_lines": [
+              "# OS + editor noise",
+              ".DS_Store",
+              "Thumbs.db",
+              "*.swp",
+              ".idea/",
+              ".vscode/*",
+              "!.vscode/extensions.json",
+              "",
+              "# Build + dependency output",
+              "node_modules/",
+              "dist/",
+              "build/",
+              "coverage/",
+              "__pycache__/",
+              "*.py[cod]",
+              ".venv/",
+              "",
+              "# Local secrets (never commit these)",
+              ".env",
+              ".env.*",
+              "!.env.example"
+            ]
+          }
+        ]
+      },
+      "lf_line_endings": {
+        "mode": "block",
+        "description": "Normalize line endings to LF and mark common binary types.",
+        "files": [
+          {
+            "path": ".gitattributes",
+            "content_lines": [
+              "* text=auto eol=lf",
+              "*.sh text eol=lf",
+              "*.bat text eol=crlf",
+              "*.png binary",
+              "*.jpg binary",
+              "*.gif binary",
+              "*.ico binary",
+              "*.pdf binary",
+              "*.zip binary"
+            ]
+          }
+        ]
+      },
+      "dependabot_actions": {
+        "mode": "block",
+        "description": "Dependabot updates for GitHub Actions workflows.",
+        "files": [
+          {
+            "path": ".github/dependabot.yml",
+            "scaffold": [
+              "version: 2",
+              "updates:"
+            ],
+            "content_lines": [
+              "  - package-ecosystem: github-actions",
+              "    directory: \"/\"",
+              "    schedule:",
+              "      interval: weekly",
+              "    commit-message:",
+              "      prefix: \"chore(deps)\"",
+              "    labels:",
+              "      - dependencies"
+            ]
+          }
+        ]
+      },
+      "dotfiles": {
+        "mode": "init",
+        "description": "Baseline editor configuration (created only when missing).",
+        "files": [
+          {
+            "path": ".editorconfig",
+            "content_lines": [
+              "root = true",
+              "",
+              "[*]",
+              "charset = utf-8",
+              "end_of_line = lf",
+              "insert_final_newline = true",
+              "trim_trailing_whitespace = true",
+              "indent_style = space",
+              "indent_size = 2",
+              "",
+              "[*.py]",
+              "indent_size = 4",
+              "",
+              "[*.md]",
+              "trim_trailing_whitespace = false",
+              "",
+              "[Makefile]",
+              "indent_style = tab"
+            ]
+          }
+        ]
+      },
+      "codeowners": {
+        "mode": "init",
+        "description": "CODEOWNERS stub (created only when missing). Set {{codeowner}} in config variables.",
+        "files": [
+          {
+            "path": ".github/CODEOWNERS",
+            "content_lines": [
+              "# Default owners for everything in this repository.",
+              "# Docs: https://docs.github.com/articles/about-code-owners",
+              "* {{codeowner}}"
+            ]
+          }
+        ]
+      },
+      "license": {
+        "mode": "init",
+        "description": "MIT LICENSE (created only when missing). Override for other licenses.",
+        "files": [
+          {
+            "path": "LICENSE",
+            "content_lines": [
+              "MIT License",
+              "",
+              "Copyright (c) {{year}} {{owner}}",
+              "",
+              "Permission is hereby granted, free of charge, to any person obtaining a copy",
+              "of this software and associated documentation files (the \"Software\"), to deal",
+              "in the Software without restriction, including without limitation the rights",
+              "to use, copy, modify, merge, publish, distribute, sublicense, and/or sell",
+              "copies of the Software, and to permit persons to whom the Software is",
+              "furnished to do so, subject to the following conditions:",
+              "",
+              "The above copyright notice and this permission notice shall be included in all",
+              "copies or substantial portions of the Software.",
+              "",
+              "THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR",
+              "IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,",
+              "FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE",
+              "AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER",
+              "LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,",
+              "OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE",
+              "SOFTWARE."
+            ]
+          }
+        ]
+      },
+      "notice_apache2": {
+        "mode": "init",
+        "description": "NOTICE file for Apache-2.0 projects (created only when missing).",
+        "files": [
+          {
+            "path": "NOTICE",
+            "content_lines": [
+              "{{repo}}",
+              "Copyright {{year}} {{owner}}",
+              "",
+              "This product includes software developed by {{owner}}.",
+              "",
+              "Licensed under the Apache License, Version 2.0 (the \"License\");",
+              "you may not use this file except in compliance with the License.",
+              "You may obtain a copy of the License at",
+              "",
+              "    http://www.apache.org/licenses/LICENSE-2.0",
+              "",
+              "Unless required by applicable law or agreed to in writing, software",
+              "distributed under the License is distributed on an \"AS IS\" BASIS,",
+              "WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.",
+              "See the License for the specific language governing permissions and",
+              "limitations under the License."
+            ]
+          }
+        ]
+      },
+      "shellcheck": {
+        "mode": "block",
+        "description": "Shared ShellCheck configuration.",
+        "files": [
+          {
+            "path": ".shellcheckrc",
+            "content_lines": [
+              "shell=bash",
+              "external-sources=true",
+              "enable=quote-safe-variables",
+              "enable=require-variable-braces"
+            ]
+          }
+        ]
+      },
+      "prettier": {
+        "mode": "block",
+        "description": "Shared Prettier ignore rules (config file is created if missing).",
+        "files": [
+          {
+            "path": ".prettierignore",
+            "content_lines": [
+              "node_modules/",
+              "dist/",
+              "build/",
+              "coverage/",
+              "*.min.js",
+              "*.min.css"
+            ]
+          },
+          {
+            "path": ".prettierrc.json",
+            "mode": "init",
+            "content_lines": [
+              "{",
+              "  \"printWidth\": 100,",
+              "  \"singleQuote\": false,",
+              "  \"semi\": true,",
+              "  \"trailingComma\": \"es5\",",
+              "  \"endOfLine\": \"lf\"",
+              "}"
+            ]
+          }
+        ]
+      },
+      "markdownlint": {
+        "mode": "file",
+        "description": "Canonical markdownlint configuration.",
+        "files": [
+          {
+            "path": ".markdownlint.json",
+            "content_lines": [
+              "{",
+              "  \"default\": true,",
+              "  \"MD013\": false,",
+              "  \"MD024\": { \"siblings_only\": true },",
+              "  \"MD033\": false,",
+              "  \"MD041\": false",
+              "}"
+            ]
+          }
+        ]
+      },
+      "baseline": {
+        "description": "Bundle: the services most repositories want on day one.",
+        "includes": [
+          "common",
+          "lf_line_endings",
+          "dotfiles",
+          "markdownlint"
+        ]
+      }
+    }
+  }
+}

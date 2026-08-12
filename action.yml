@@ -1,11 +1,4 @@
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Blackout Secure Managed File Sync
-# Copyright © 2025-2026 Blackout Secure
-# Licensed under Apache License 2.0
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 name: 'Blackout Secure Managed File Sync'
-# MP010: keep <= 125 chars; full feature list lives in README.md.
 description: >-
   Sync canonical repo files and managed blocks across repositories with drift detection and dry-run checks.
 author: 'Blackout Secure'
@@ -14,45 +7,50 @@ branding:
   color: 'blue'
   icon: 'refresh-cw'
 
-# Per-repo policy lives in `bos-universal-config.json` (auto-discovered at the
-# repo root, `managed_file_sync` section). The inputs below are the small set of
-# operator-level overrides for CI; everything else — which services run, the
-# canonical file contents, template variables — belongs in the JSON config or in
-# a shared catalog file.
-
 inputs:
-  # ----- Config resolution -----
+  use_global_config:
+    description: >-
+      `true` to merge an org/hub-level global config. Disabled by default.
+    required: false
+    default: 'false'
+  global_config_path:
+    description: >-
+      Path to an org/hub-level config file used when `use_global_config` is
+      `true`. Merged as the first tier; repo config (config_path) overrides it.
+      Use to enforce org-wide standards while allowing repo-specific overrides.
+    required: false
+    default: '.github/blackout-secure-managed-file-sync-global-config.json'
   config_path:
     description: >-
       Path to the repo config file. Defaults to auto-discovery of
+      `.github/bos-universal-config.json` (preferred),
       `bos-universal-config.json`, `managed-file-sync.json`, or
-      `.managed-file-sync.json` at the repo root.
+      `.managed-file-sync.json`.
     required: false
     default: ''
   services:
     description: >-
       Comma or space separated list of services to sync. Overrides the service
-      list in the config. Use `*` to select every catalog service.
+      list in the config. Use `*` to select every configured file service.
     required: false
     default: ''
-  catalog_path:
+  managed_files_path:
     description: >-
-      Optional path to an extra service catalog JSON file. Pass several by
-      separating them with newlines.
+      Relative path to managed file templates used by `content_file` entries in
+      service definitions. Defaults to `.github/managed-files`.
     required: false
-    default: ''
-  use_default_catalog:
-    description: '`true` to load the built-in vendor-neutral service catalog.'
+    default: '.github/managed-files'
+  workload_arch:
+    description: >-
+      Runner workload selection for built-in variables: `auto`, `x64`,
+      `arm64`, or `default`. `auto` uses `RUNNER_ARCH` when available.
     required: false
-    default: 'true'
-
-  # ----- Scope -----
+    default: 'auto'
   working_directory:
     description: 'Repository root to sync.'
     required: false
     default: '.'
 
-  # ----- Failure policy -----
   dry_run:
     description: '`true` to report what would change without writing any file.'
     required: false
@@ -66,7 +64,6 @@ inputs:
     required: false
     default: 'true'
 
-  # ----- Tuning -----
   python_version:
     description: 'Python version installed on the runner for the sync step.'
     required: false
@@ -89,8 +86,6 @@ outputs:
 runs:
   using: composite
   steps:
-    # ----- 0. Install the kit itself so `bos-sync` is on PATH ---------
-    # SHA pin per Marketplace SC002 hygiene; bump via Dependabot.
     - name: Set up Python
       uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
       with:
@@ -103,24 +98,28 @@ runs:
         python3 -m pip install --quiet --upgrade pip
         python3 -m pip install --quiet "${GITHUB_ACTION_PATH}"
 
-    # ----- 1. Reconcile the working tree ------------------------------
     - id: sync
       name: Sync managed files
       shell: bash
       working-directory: ${{ inputs.working_directory }}
       env:
+        MFS_USE_GLOBAL_CONFIG:   ${{ inputs.use_global_config }}
+        MFS_GLOBAL_CONFIG_PATH:  ${{ inputs.global_config_path }}
         MFS_CONFIG_PATH:         ${{ inputs.config_path }}
         MFS_SERVICES:            ${{ inputs.services }}
-        MFS_CATALOG_PATH:        ${{ inputs.catalog_path }}
-        MFS_USE_DEFAULT_CATALOG: ${{ inputs.use_default_catalog }}
+        MFS_MANAGED_FILES_PATH:  ${{ inputs.managed_files_path }}
+        MFS_WORKLOAD_ARCH:      ${{ inputs.workload_arch }}
         MFS_DRY_RUN:             ${{ inputs.dry_run }}
         MFS_FAIL_ON_DRIFT:       ${{ inputs.fail_on_drift }}
         MFS_SHOW_DIFF:           ${{ inputs.show_diff }}
       run: |
         set -euo pipefail
 
-        # Built as an array so paths with spaces survive the hand-off.
         args=(--root .)
+
+        if [[ "${MFS_USE_GLOBAL_CONFIG}" == "true" ]]; then
+          args+=(--use-global-config --global-config "${MFS_GLOBAL_CONFIG_PATH}")
+        fi
 
         if [[ -n "${MFS_CONFIG_PATH}" ]]; then
           args+=(--config "${MFS_CONFIG_PATH}")
@@ -130,16 +129,8 @@ runs:
           args+=(--services "${MFS_SERVICES}")
         fi
 
-        if [[ -n "${MFS_CATALOG_PATH}" ]]; then
-          while IFS= read -r catalog; do
-            if [[ -n "${catalog}" ]]; then
-              args+=(--catalog "${catalog}")
-            fi
-          done <<< "${MFS_CATALOG_PATH}"
-        fi
-
-        if [[ "${MFS_USE_DEFAULT_CATALOG}" != "true" ]]; then
-          args+=(--no-default-catalog)
+        if [[ -n "${MFS_MANAGED_FILES_PATH}" ]]; then
+          args+=(--managed-files-path "${MFS_MANAGED_FILES_PATH}")
         fi
 
         if [[ "${MFS_DRY_RUN}" == "true" ]]; then

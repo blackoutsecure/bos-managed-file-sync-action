@@ -1,4 +1,0 @@
-# CODEOWNERS for bos-managed-file-sync-action
-#
-# Repo-wide default — every PR pings the security team.
-* @blackoutsecure/security
