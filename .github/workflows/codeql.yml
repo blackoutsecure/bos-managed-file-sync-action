@@ -32,6 +32,10 @@ jobs:
       contents: read
       actions: read
     with:
+      # Universal Security already runs the kit composite on pull requests.
+      # Keep this caller focused on CodeQL there, while retaining the scanner
+      # on direct pushes and manual runs.
+      enable_kit_composite: ${{ github.event_name != 'pull_request' }}
       # Passed to `fromJSON()` on the reusable side, so it must be valid JSON —
       # YAML's `[python, actions]` shorthand is rejected there.
       codeql_languages: '["python", "actions"]'

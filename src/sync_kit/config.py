@@ -21,6 +21,7 @@ from .markers import DEFAULT_NAMESPACE
 
 CONFIG_SECTION = "managed_file_sync"
 MARKETPLACE_CONFIG_FILE = "blackout-secure-managed-file-sync-marketplace-config.json"
+MARKETPLACE_LOCKED_CONFIG_FILE = "blackout-secure-managed-file-sync-marketplace-locked-config.json"
 DEFAULT_CONFIG_PATHS = (
     ".github/bos-universal-config.json",
     "bos-universal-config.json",
@@ -33,8 +34,10 @@ DEFAULT_CONFIG_NAMES = DEFAULT_CONFIG_PATHS
 
 _TEMPLATE_TOKEN = re.compile(r"\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}")
 _RUNNER_LABEL = re.compile(r"^[A-Za-z0-9_.-]+$")
+_MARKER_IDENTIFIER = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 FALLBACK_DEFAULT_RUNNER = "ubuntu-latest"
+DEFAULT_SYNC_DIRECTION = "source-to-destination"
 
 
 def load_json(path: Path) -> Any:
@@ -43,8 +46,12 @@ def load_json(path: Path) -> Any:
         return json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
         raise ConfigError(f"file not found: {path}") from exc
+    except UnicodeDecodeError as exc:
+        raise ConfigError(f"config file must be UTF-8 text: {path}") from exc
     except json.JSONDecodeError as exc:
         raise ConfigError(f"invalid JSON in {path}: {exc}") from exc
+    except OSError as exc:
+        raise ConfigError(f"failed to read config file {path}: {exc}") from exc
 
 
 def find_config(root: Path, config_path: str | None = None) -> Path | None:
@@ -155,29 +162,59 @@ def _load_config_section(config_file: Path | None) -> dict[str, Any]:
     return section
 
 
-def _load_marketplace_config() -> dict[str, Any]:
-    """Load the built-in marketplace best practices config.
-
-    Returns the ``managed_file_sync`` section from the bundled marketplace config.
-    This is shipped with the action as the base tier (tier 0).
-    """
+def _load_bundled_config(path: str, *, label: str) -> dict[str, Any]:
+    """Load a bundled config section from this package."""
     try:
-        # Use importlib.resources to load the marketplace config bundled with the package
-        if hasattr(importlib.resources, "files"):
-            # Python 3.9+
-            files = importlib.resources.files("sync_kit")
-            marketplace_data = json.loads(
-                files.joinpath(MARKETPLACE_CONFIG_FILE).read_text(encoding="utf-8")
-            )
-        else:  # pragma: no cover - files() is available on supported Python versions
-            raise ConfigError("Python runtime does not support importlib.resources.files")
+        files = importlib.resources.files("sync_kit")
+        config_data = json.loads(
+            files.joinpath(path).read_text(encoding="utf-8")
+        )
 
-        section = marketplace_data.get(CONFIG_SECTION, marketplace_data)
+        section = config_data.get(CONFIG_SECTION, config_data)
         if not isinstance(section, dict):
-            raise ConfigError("marketplace config must contain a 'managed_file_sync' object")
+            raise ConfigError(f"{label} config must contain a 'managed_file_sync' object")
         return section
     except Exception as exc:
-        raise ConfigError(f"failed to load marketplace config: {exc}") from exc
+        raise ConfigError(f"failed to load {label} config: {exc}") from exc
+
+
+def _load_marketplace_config() -> dict[str, Any]:
+    """Load switchable marketplace best-practice defaults."""
+    return _load_bundled_config(MARKETPLACE_CONFIG_FILE, label="marketplace")
+
+
+def _load_marketplace_locked_config() -> dict[str, Any]:
+    """Load locked marketplace defaults that cannot be overridden."""
+    return _load_bundled_config(MARKETPLACE_LOCKED_CONFIG_FILE, label="marketplace locked")
+
+
+def _apply_locked_defaults(
+    merged: dict[str, Any],
+    locked: dict[str, Any],
+) -> dict[str, Any]:
+    """Force locked keys to canonical values while preserving other merged fields."""
+    result = dict(merged)
+    for key, value in locked.items():
+        if key == "variables":
+            if not isinstance(value, dict):
+                raise ConfigError("marketplace locked config 'variables' must be an object")
+            current = result.get("variables") or {}
+            if not isinstance(current, dict):
+                raise ConfigError("'variables' must be a JSON object of string values")
+            for name, locked_value in value.items():
+                if name in current and str(current[name]) != str(locked_value):
+                    raise ConfigError(
+                        f"'variables.{name}' is locked by marketplace defaults and cannot be overridden"
+                    )
+            result["variables"] = {
+                **{str(name): str(val) for name, val in current.items()},
+                **{str(name): str(val) for name, val in value.items()},
+            }
+            continue
+        if key in result and result[key] != value:
+            raise ConfigError(f"'{key}' is locked by marketplace defaults and cannot be overridden")
+        result[key] = value
+    return result
 
 
 def load_repo_config(
@@ -188,9 +225,10 @@ def load_repo_config(
     """Load and merge marketplace + global + repo config.
 
     Cascade (lower tier wins for scalars, deep merge for objects):
-        1. Marketplace config (tier 0) — built-in best practices (default ON)
-        2. Global config (tier 1) — org/hub-level overrides
-        3. Repo config (tier 2) — repo-specific overrides
+        0. Locked marketplace config (always ON; non-overridable keys)
+        1. Marketplace config (switchable built-in defaults)
+        2. Global config (org/hub-level overrides)
+        3. Repo config (repo-specific overrides)
 
     Args:
         config_file: repo-specific config file path (optional).
@@ -204,35 +242,37 @@ def load_repo_config(
     Raises:
         ConfigError: on invalid config file.
     """
-    # Start with marketplace config if enabled
-    merged = {}
-    if use_marketplace:
-        marketplace_section = _load_marketplace_config()
-        merged = dict(marketplace_section)
-        # Check if any config disables marketplace (user override takes precedence)
-        if marketplace_section.get("use_marketplace_config") is False:
-            use_marketplace = False
-            merged = {}
-
-    # Merge global config on top
     global_section = _load_config_section(global_config_file)
-    if global_section:
-        # Check if global config disables marketplace
-        if global_section.get("use_marketplace_config") is False:
-            merged = {}
-            use_marketplace = False
-        merged = _merge_section(merged, global_section)
-
-    # Merge repo config on top
     repo_section = _load_config_section(config_file)
-    if repo_section:
-        # Check if repo config disables marketplace
-        if repo_section.get("use_marketplace_config") is False and use_marketplace:
-            # Repo explicitly disables; restart from global only
-            merged = dict(global_section)
-        merged = _merge_section(merged, repo_section)
 
-    return merged
+    marketplace_enabled = use_marketplace
+    for section in (global_section, repo_section):
+        if "use_marketplace_config" not in section:
+            continue
+        configured = _bool_field(
+            section["use_marketplace_config"],
+            "use_marketplace_config",
+            marketplace_enabled,
+        )
+        if use_marketplace:
+            marketplace_enabled = configured
+
+    locked_section = _load_marketplace_locked_config()
+    merged: dict[str, Any] = _apply_locked_defaults({}, locked_section)
+    if marketplace_enabled:
+        marketplace_section = _load_marketplace_config()
+        if _bool_field(
+            marketplace_section.get("use_marketplace_config"),
+            "use_marketplace_config",
+            True,
+        ):
+            merged = _merge_section(merged, marketplace_section)
+
+    for section in (global_section, repo_section):
+        if section:
+            merged = _merge_section(merged, section)
+
+    return _apply_locked_defaults(merged, locked_section)
 
 
 def parse_service_list(value: str | None) -> list[str]:
@@ -242,12 +282,31 @@ def parse_service_list(value: str | None) -> list[str]:
     return [part for part in re.split(r"[,\s]+", value.strip()) if part]
 
 
+def marker_identifier(value: Any, key: str) -> str:
+    """Validate a service or namespace token embedded in managed markers."""
+    identifier = str(value).strip()
+    if not _MARKER_IDENTIFIER.fullmatch(identifier):
+        raise ConfigError(f"'{key}' must contain only letters, numbers, '.', '_', or '-'")
+    return identifier
+
+
 def marker_namespace(section: dict[str, Any]) -> str:
     """Marker namespace for this repo (``managed-file-sync`` by default)."""
-    namespace = str(section.get("marker_namespace") or DEFAULT_NAMESPACE).strip()
-    if not namespace or ":" in namespace:
-        raise ConfigError(f"'marker_namespace' must be non-empty and contain no ':' — got {namespace!r}")
-    return namespace
+    return marker_identifier(
+        section.get("marker_namespace") or DEFAULT_NAMESPACE,
+        "marker_namespace",
+    )
+
+
+def sync_direction(section: dict[str, Any]) -> str:
+    """Return the supported one-way sync direction."""
+    direction = section.get("direction", DEFAULT_SYNC_DIRECTION)
+    if direction != DEFAULT_SYNC_DIRECTION:
+        raise ConfigError(
+            "'direction' must be 'source-to-destination'; reverse and "
+            "bidirectional sync are not supported"
+        )
+    return direction
 
 
 def managed_note(section: dict[str, Any]) -> str | None:
@@ -269,15 +328,30 @@ def string_map(value: Any, key: str = "variables") -> dict[str, str]:
     return {str(name): str(val) for name, val in value.items()}
 
 
-def builtin_variables() -> dict[str, str]:
-    """Variables always available to service templates."""
+def builtin_variables(overrides: dict[str, str] | None = None) -> dict[str, str]:
+    """Variables always available to templates, with normalized runner overrides."""
+    overrides = overrides or {}
     repository = os.environ.get("GITHUB_REPOSITORY", "")
     owner, _, repo = repository.partition("/")
-    fallback = FALLBACK_DEFAULT_RUNNER
-    default_runner = _runner_or_fallback(os.environ.get("DEFAULT_RUNNER"), fallback)
-    runner_x64 = _runner_or_fallback(os.environ.get("RUNNER_X64"), fallback)
-    runner_arm64 = _runner_or_fallback(os.environ.get("RUNNER_ARM64"), fallback)
-    workload_arch = _workload_arch_value(os.environ.get("MFS_WORKLOAD_ARCH"))
+    fallback = _runner_or_fallback(
+        overrides.get("fallback_default_runner"),
+        FALLBACK_DEFAULT_RUNNER,
+    )
+    default_runner = _runner_or_fallback(
+        overrides.get("DEFAULT_RUNNER", os.environ.get("DEFAULT_RUNNER")),
+        fallback,
+    )
+    runner_x64 = _runner_or_fallback(
+        overrides.get("RUNNER_X64", os.environ.get("RUNNER_X64")),
+        fallback,
+    )
+    runner_arm64 = _runner_or_fallback(
+        overrides.get("RUNNER_ARM64", os.environ.get("RUNNER_ARM64")),
+        fallback,
+    )
+    workload_arch = _workload_arch_value(
+        os.environ.get("MFS_WORKLOAD_ARCH", overrides.get("WORKLOAD_ARCH"))
+    )
     selected_runner = _select_runner_for_workload(
         workload_arch=workload_arch,
         default_runner=default_runner,
@@ -285,19 +359,25 @@ def builtin_variables() -> dict[str, str]:
         runner_arm64=runner_arm64,
         runtime_runner_arch=os.environ.get("RUNNER_ARCH"),
     )
-    return {
+    variables = {
         "year": str(date.today().year),
         "repository": repository,
         "owner": owner or os.environ.get("GITHUB_REPOSITORY_OWNER", ""),
         "repo": repo,
         "project_name": repo,
-        "fallback_default_runner": fallback,
-        "DEFAULT_RUNNER": default_runner,
-        "RUNNER_X64": runner_x64,
-        "RUNNER_ARM64": runner_arm64,
-        "WORKLOAD_ARCH": workload_arch,
-        "SELECTED_RUNNER": selected_runner,
     }
+    variables.update(overrides)
+    variables.update(
+        {
+            "fallback_default_runner": fallback,
+            "DEFAULT_RUNNER": default_runner,
+            "RUNNER_X64": runner_x64,
+            "RUNNER_ARM64": runner_arm64,
+            "WORKLOAD_ARCH": workload_arch,
+            "SELECTED_RUNNER": selected_runner,
+        }
+    )
+    return variables
 
 
 def _runner_or_fallback(value: str | None, fallback: str) -> str:

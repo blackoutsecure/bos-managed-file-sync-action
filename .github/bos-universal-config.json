@@ -16,6 +16,10 @@
     "code_scan_fail_on": "fail",
     "code_scan_http_timeout": "20"
   },
+  "managed_file_sync": {
+    "direction": "source-to-destination",
+    "use_marketplace_config": false
+  },
   "marketplace": {
     "enabled": true,
     "target_branch": "main",

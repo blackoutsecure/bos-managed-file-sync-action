@@ -63,7 +63,14 @@ def test_services_subcommand_lists_catalog(repo, capsys):
 def test_validate_subcommand(repo, capsys):
     repo.write_config({"services": ["common"]})
     assert main(["validate", "--root", str(repo.root)]) == EXIT_OK
-    assert "valid" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "direction: source-to-destination" in output
+    assert "valid" in output
+
+
+def test_reverse_direction_returns_config_exit_code(repo):
+    repo.write_config({"direction": "destination-to-source", "services": ["common"]})
+    assert main(["validate", "--root", str(repo.root)]) == EXIT_CONFIG
 
 
 def test_custom_marker_namespace_from_config(repo):
@@ -137,13 +144,51 @@ def test_github_output_is_written(repo, monkeypatch):
     assert json.dumps([".gitignore"]) in content
 
 
-def test_global_config_is_ignored_by_default(repo):
+def test_github_output_delimiter_cannot_collide_with_changed_path(repo, monkeypatch):
+    output_file = repo.root / "gh_output.txt"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output_file))
+    repo.write_config(
+        {
+            "use_marketplace_services": False,
+            "services": ["custom"],
+            "service_definitions": {
+                "custom": {"mode": "file", "files": [{"path": "MFS_EOF", "content": "x"}]}
+            },
+        }
+    )
+
+    assert main(["apply", "--root", str(repo.root)]) == EXIT_OK
+
+    content = output_file.read_text(encoding="utf-8")
+    assert "changed_files<<MFS_EOF_\n" in content
+    assert "\nMFS_EOF\nMFS_EOF_\n" in content
+
+
+def test_github_output_write_failure_returns_config_exit_code(repo, monkeypatch):
+    output_directory = repo.root / "output-directory"
+    output_directory.mkdir()
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output_directory))
+    repo.write_config({"services": ["common"]})
+
+    assert main(["apply", "--root", str(repo.root), "--dry-run"]) == EXIT_CONFIG
+
+
+def test_global_config_is_loaded_automatically(repo):
     repo.write_config({"services": ["common"]})
     repo.write(
         ".github/blackout-secure-managed-file-sync-global-config.json",
         "{ not json",
     )
-    assert main(["apply", "--root", str(repo.root)]) == EXIT_OK
+    assert main(["apply", "--root", str(repo.root)]) == EXIT_CONFIG
+
+
+def test_global_config_can_be_disabled(repo):
+    repo.write_config({"services": ["common"]})
+    repo.write(
+        ".github/blackout-secure-managed-file-sync-global-config.json",
+        "{ not json",
+    )
+    assert main(["apply", "--root", str(repo.root), "--no-global-config"]) == EXIT_OK
 
 
 def test_global_config_is_loaded_when_enabled(repo):
@@ -152,6 +197,10 @@ def test_global_config_is_loaded_when_enabled(repo):
         ".github/blackout-secure-managed-file-sync-global-config.json",
         "{ not json",
     )
+    assert main(["apply", "--root", str(repo.root), "--use-global-config"]) == EXIT_CONFIG
+
+
+def test_required_global_config_must_exist(repo):
     assert main(["apply", "--root", str(repo.root), "--use-global-config"]) == EXIT_CONFIG
 
 
@@ -188,3 +237,30 @@ def test_cli_managed_files_path_override(repo):
         == EXIT_OK
     )
     assert repo.read("MANAGED.txt").endswith("managed-template\n")
+
+
+def test_configured_managed_files_path_is_used_without_cli_override(repo):
+    repo.write(
+        ".github/bos-universal-config.json",
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "use_marketplace_services": False,
+                    "managed_files_path": "repo-managed",
+                    "services": ["custom"],
+                    "service_definitions": {
+                        "custom": {
+                            "mode": "file",
+                            "files": [
+                                {"path": "MANAGED.txt", "content_file": "templates/custom.txt"}
+                            ],
+                        }
+                    },
+                }
+            }
+        ),
+    )
+    repo.write("repo-managed/templates/custom.txt", "configured-template\n")
+
+    assert main(["apply", "--root", str(repo.root)]) == EXIT_OK
+    assert repo.read("MANAGED.txt").endswith("configured-template\n")

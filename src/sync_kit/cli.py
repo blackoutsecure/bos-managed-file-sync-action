@@ -16,7 +16,6 @@ import argparse
 import json
 import os
 import sys
-from pathlib import Path
 
 from . import __version__
 from .catalog import load_catalog, resolve_services
@@ -27,9 +26,11 @@ from .config import (
     marker_namespace,
     parse_service_list,
     string_map,
+    sync_direction,
 )
 from .engine import SyncEngine, SyncResult
 from .errors import ConfigError, SyncKitError
+from .paths import resolve_repo_root
 
 EXIT_OK = 0
 EXIT_DRIFT = 1
@@ -40,16 +41,25 @@ DEFAULT_GLOBAL_CONFIG_PATH = ".github/blackout-secure-managed-file-sync-global-c
 
 def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--root", default=".", help="Repository root to sync (default: current directory)")
-    parser.add_argument(
+    global_config = parser.add_mutually_exclusive_group()
+    global_config.add_argument(
         "--use-global-config",
         action="store_true",
-        help="Enable org/hub-level global config merge (off by default)",
+        dest="use_global_config",
+        help="Require and merge the org/hub-level global config",
     )
+    global_config.add_argument(
+        "--no-global-config",
+        action="store_false",
+        dest="use_global_config",
+        help="Disable automatic org/hub-level global config discovery",
+    )
+    parser.set_defaults(use_global_config=None)
     parser.add_argument(
         "--global-config",
         default=DEFAULT_GLOBAL_CONFIG_PATH,
         help=(
-            "Path to org/hub-level config file when --use-global-config is set "
+            "Org/hub-level config path, loaded automatically when present "
             f"(default: {DEFAULT_GLOBAL_CONFIG_PATH})"
         ),
     )
@@ -96,17 +106,20 @@ class _Plan:
     """Everything resolved from disk before any file is touched."""
 
     def __init__(self, args: argparse.Namespace) -> None:
-        self.root = Path(args.root).resolve()
+        self.root = resolve_repo_root(args.root)
         self.config_file = find_config(self.root, args.config)
-        self.global_config_file = (
-            find_config(self.root, args.global_config)
-            if args.use_global_config
-            else None
-        )
+        global_config = self.root / args.global_config
+        if args.use_global_config is True:
+            self.global_config_file = find_config(self.root, args.global_config)
+        elif args.use_global_config is False:
+            self.global_config_file = None
+        else:
+            self.global_config_file = global_config if global_config.is_file() else None
         self.section = load_repo_config(
             config_file=self.config_file,
             global_config_file=self.global_config_file,
         )
+        self.direction = sync_direction(self.section)
         self.catalog = load_catalog(
             root=self.root,
             section=self.section,
@@ -125,19 +138,26 @@ def _write_github_output(result: SyncResult) -> None:
     if not output_file:
         return
     files = result.changed_files
-    with open(output_file, "a", encoding="utf-8") as handle:
-        handle.write(f"changed={'true' if result.changed else 'false'}\n")
-        handle.write(f"changed_count={len(files)}\n")
-        handle.write(f"changed_files_json={json.dumps(files)}\n")
-        handle.write("changed_files<<MFS_EOF\n")
-        handle.write("\n".join(files) + ("\n" if files else ""))
-        handle.write("MFS_EOF\n")
+    delimiter = "MFS_EOF"
+    while delimiter in files:
+        delimiter += "_"
+    try:
+        with open(output_file, "a", encoding="utf-8") as handle:
+            handle.write(f"changed={'true' if result.changed else 'false'}\n")
+            handle.write(f"changed_count={len(files)}\n")
+            handle.write(f"changed_files_json={json.dumps(files)}\n")
+            handle.write(f"changed_files<<{delimiter}\n")
+            handle.write("\n".join(files) + ("\n" if files else ""))
+            handle.write(f"{delimiter}\n")
+    except OSError as exc:
+        raise ConfigError(f"failed to write GitHub outputs to '{output_file}': {exc}") from exc
 
 
 def _print_header(plan: _Plan, mode: str) -> None:
     print(f"bos-managed-file-sync {__version__}")
     print(f"config:    {plan.config_file or '(none — using inputs and defaults)'}")
     print(f"root:      {plan.root}")
+    print(f"direction: {plan.direction}")
     print(f"namespace: {plan.namespace}")
     print(f"services:  {', '.join(service.name for service in plan.services) or '(none)'}")
     print(f"mode:      {mode}")

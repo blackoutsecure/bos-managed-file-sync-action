@@ -14,6 +14,7 @@ from sync_kit.config import (
     parse_service_list,
     render,
     string_map,
+    sync_direction,
 )
 from sync_kit.errors import ConfigError
 
@@ -44,6 +45,14 @@ def test_invalid_json_raises(repo):
         load_repo_config(path)
 
 
+def test_non_utf8_config_raises_config_error(repo):
+    path = repo.root / "bos-universal-config.json"
+    path.write_bytes(b"\xff\xfe")
+
+    with pytest.raises(ConfigError, match="UTF-8"):
+        load_repo_config(path)
+
+
 def test_non_object_root_raises(repo):
     path = repo.write("managed-file-sync.json", json.dumps([1, 2, 3]))
     with pytest.raises(ConfigError):
@@ -56,8 +65,11 @@ def test_section_defaults_to_root_object(repo):
 
 
 def test_no_config_file_yields_empty_section():
-    # Test without marketplace config (backwards compat); marketplace is enabled by default
-    assert load_repo_config(None, use_marketplace=False) == {}
+    config = load_repo_config(None, use_marketplace=False)
+    assert config == {
+        "direction": "source-to-destination",
+        "variables": {"fallback_default_runner": "ubuntu-latest"},
+    }
 
 
 @pytest.mark.parametrize(
@@ -77,9 +89,21 @@ def test_marker_namespace_defaults_and_overrides():
     assert marker_namespace({"marker_namespace": "bos-automation-hub"}) == "bos-automation-hub"
 
 
-def test_marker_namespace_rejects_colon():
+def test_sync_direction_defaults_and_accepts_one_way_mode():
+    assert sync_direction({}) == "source-to-destination"
+    assert sync_direction({"direction": "source-to-destination"}) == "source-to-destination"
+
+
+@pytest.mark.parametrize("direction", ["destination-to-source", "bidirectional", "reverse", None])
+def test_sync_direction_rejects_unsupported_modes(direction):
+    with pytest.raises(ConfigError, match="source-to-destination"):
+        sync_direction({"direction": direction})
+
+
+@pytest.mark.parametrize("namespace", ["bad:namespace", "bad namespace", "bad\nnamespace"])
+def test_marker_namespace_rejects_unsafe_characters(namespace):
     with pytest.raises(ConfigError):
-        marker_namespace({"marker_namespace": "bad:namespace"})
+        marker_namespace({"marker_namespace": namespace})
 
 
 def test_string_map_rejects_non_object():
@@ -163,6 +187,41 @@ def test_selected_runner_explicit_override(monkeypatch):
     assert variables["SELECTED_RUNNER"] == "ubuntu-24.04"
 
 
+def test_config_runner_overrides_drive_selected_runner(monkeypatch):
+    monkeypatch.delenv("DEFAULT_RUNNER", raising=False)
+    monkeypatch.delenv("RUNNER_X64", raising=False)
+    monkeypatch.delenv("RUNNER_ARM64", raising=False)
+    monkeypatch.setenv("RUNNER_ARCH", "ARM64")
+    monkeypatch.setenv("MFS_WORKLOAD_ARCH", "auto")
+
+    variables = builtin_variables(
+        {
+            "fallback_default_runner": "self-hosted",
+            "DEFAULT_RUNNER": "default-pool",
+            "RUNNER_X64": "x64-pool",
+            "RUNNER_ARM64": "arm64-pool",
+        }
+    )
+
+    assert variables["fallback_default_runner"] == "self-hosted"
+    assert variables["SELECTED_RUNNER"] == "arm64-pool"
+
+
+def test_invalid_config_runner_override_uses_configured_fallback(monkeypatch):
+    monkeypatch.delenv("MFS_WORKLOAD_ARCH", raising=False)
+
+    variables = builtin_variables(
+        {
+            "fallback_default_runner": "self-hosted",
+            "DEFAULT_RUNNER": "invalid runner",
+            "WORKLOAD_ARCH": "default",
+        }
+    )
+
+    assert variables["DEFAULT_RUNNER"] == "self-hosted"
+    assert variables["SELECTED_RUNNER"] == "self-hosted"
+
+
 def test_selected_runner_auto_invalid_runtime_falls_back_default(monkeypatch):
     monkeypatch.setenv("DEFAULT_RUNNER", "ubuntu-latest")
     monkeypatch.setenv("RUNNER_X64", "ubuntu-24.04")
@@ -181,15 +240,86 @@ def test_marketplace_config_is_loaded_by_default():
     # Marketplace should include these by default
     assert "common" in config.get("services", [])
     assert "lf_line_endings" in config.get("services", [])
+    assert "dependabot_actions" in config.get("services", [])
+    assert "dotfiles" in config.get("services", [])
+    assert config.get("direction") == "source-to-destination"
     assert config.get("marker_namespace") == "managed-file-sync"
-    assert "dependabot.yml" in config.get("exclude_paths", [])
+    assert "exclude_paths" not in config
 
 
 def test_marketplace_config_can_be_disabled():
     """use_marketplace_config: false should disable marketplace tier."""
     config = load_repo_config(None, use_marketplace=False)
-    # Without marketplace, empty config
-    assert config == {}
+    # Switchable marketplace defaults are disabled, but locked defaults remain.
+    assert config["direction"] == "source-to-destination"
+    assert config["variables"]["fallback_default_runner"] == "ubuntu-latest"
+    assert "services" not in config
+
+
+def test_repo_config_can_disable_marketplace(repo):
+    repo_path = repo.write(
+        "bos-universal-config.json",
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "use_marketplace_config": False,
+                    "services": ["custom"],
+                }
+            }
+        ),
+    )
+
+    config = load_repo_config(repo_path, use_marketplace=True)
+
+    assert config["services"] == ["custom"]
+    assert "common" not in config.get("service_definitions", {})
+
+
+def test_repo_config_can_reenable_marketplace_disabled_by_global_config(repo):
+    global_path = repo.write(
+        ".github/blackout-secure-managed-file-sync-global-config.json",
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "use_marketplace_config": False,
+                    "services": ["dotfiles"],
+                }
+            }
+        ),
+    )
+    repo_path = repo.write(
+        "bos-universal-config.json",
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "use_marketplace_config": True,
+                    "services": ["prettier"],
+                }
+            }
+        ),
+    )
+
+    config = load_repo_config(repo_path, global_path, use_marketplace=True)
+
+    assert config["services"] == [
+        "common",
+        "lf_line_endings",
+        "markdownlint",
+        "dependabot_actions",
+        "dotfiles",
+        "prettier",
+    ]
+    assert "common" in config["service_definitions"]
+
+
+def test_use_marketplace_config_must_be_boolean(repo):
+    repo_path = repo.write(
+        "bos-universal-config.json",
+        json.dumps({"managed_file_sync": {"use_marketplace_config": "false"}}),
+    )
+
+    with pytest.raises(ConfigError, match="use_marketplace_config"):
+        load_repo_config(repo_path, use_marketplace=True)
 
 
 def test_repo_config_merges_with_marketplace(repo):
@@ -205,7 +335,14 @@ def test_repo_config_merges_with_marketplace(repo):
     )
     config = load_repo_config(repo_path, use_marketplace=True)
     # Services append to marketplace defaults by default.
-    assert config["services"] == ["common", "lf_line_endings", "markdownlint", "prettier"]
+    assert config["services"] == [
+        "common",
+        "lf_line_endings",
+        "markdownlint",
+        "dependabot_actions",
+        "dotfiles",
+        "prettier",
+    ]
     # Marketplace marker_namespace should be inherited
     assert config.get("marker_namespace") == "managed-file-sync"
     # Variables should have both marketplace (empty) and repo-specific
@@ -265,10 +402,17 @@ def test_marketplace_global_and_repo_cascade(repo):
     )
     config = load_repo_config(repo_path, global_path, use_marketplace=True)
     # Marketplace + global + repo cascade
-    assert config["services"] == ["common", "lf_line_endings", "markdownlint", "dotfiles", "prettier"]
+    assert config["services"] == [
+        "common",
+        "lf_line_endings",
+        "markdownlint",
+        "dependabot_actions",
+        "dotfiles",
+        "prettier",
+    ]
     assert config["variables"]["org_name"] == "my-org"  # Global
     assert config["variables"]["project_name"] == "my-project"  # Repo
-    assert "dependabot.yml" in config.get("exclude_paths", [])  # Marketplace
+    assert "exclude_paths" not in config
 
 
 def test_use_marketplace_services_false_replaces_instead_of_appending(repo):
@@ -285,6 +429,42 @@ def test_use_marketplace_services_false_replaces_instead_of_appending(repo):
     )
     config = load_repo_config(repo_path, use_marketplace=True)
     assert config["services"] == ["prettier"]
+
+
+def test_repo_cannot_override_locked_direction(repo):
+    repo_path = repo.write(
+        "bos-universal-config.json",
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "direction": "destination-to-source",
+                    "services": ["common"],
+                }
+            }
+        ),
+    )
+
+    with pytest.raises(ConfigError, match="locked"):
+        load_repo_config(repo_path, use_marketplace=True)
+
+
+def test_repo_cannot_override_locked_fallback_runner(repo):
+    repo_path = repo.write(
+        "bos-universal-config.json",
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "variables": {
+                        "fallback_default_runner": "self-hosted",
+                        "project_name": "demo",
+                    }
+                }
+            }
+        ),
+    )
+
+    with pytest.raises(ConfigError, match="variables.fallback_default_runner"):
+        load_repo_config(repo_path, use_marketplace=True)
 
 
 def test_exclude_services_lists_are_appended(repo):

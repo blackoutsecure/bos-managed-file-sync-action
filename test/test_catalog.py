@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+import sync_kit.catalog as catalog_module
+import sync_kit.paths as paths_module
 from sync_kit.catalog import check_conflicts, load_catalog, parse_service, resolve_services
 from sync_kit.errors import ConfigError
 
@@ -56,6 +58,14 @@ def test_rejects_absolute_path():
         parse_service("evil", {"mode": "file", "files": [{"path": "/etc/passwd", "content": "x"}]})
 
 
+def test_rejects_path_with_output_control_characters():
+    with pytest.raises(ConfigError, match="non-empty relative path"):
+        parse_service(
+            "evil",
+            {"mode": "file", "files": [{"path": "safe.txt\nforged=true", "content": "x"}]},
+        )
+
+
 def test_rejects_content_file_traversal(repo):
     with pytest.raises(ConfigError):
         parse_service(
@@ -65,9 +75,87 @@ def test_rejects_content_file_traversal(repo):
         )
 
 
+def test_rejects_content_file_symlink_escape(repo):
+    outside = repo.root.parent / "outside-template.txt"
+    outside.write_text("external\n", encoding="utf-8")
+    link = repo.root / "templates" / "external.txt"
+    link.parent.mkdir()
+    link.symlink_to(outside)
+
+    with pytest.raises(ConfigError, match="resolves outside"):
+        parse_service(
+            "evil",
+            {"mode": "file", "files": [{"path": "a.txt", "content_file": "external.txt"}]},
+            [repo.root / "templates"],
+        )
+
+
+def test_rejects_content_file_swapped_to_symlink_during_read(repo, monkeypatch):
+    template = repo.write("templates/body.txt", "inside\n")
+    outside = repo.root.parent / "outside-raced-template.txt"
+    outside.write_text("outside\n", encoding="utf-8")
+    original_resolve = paths_module.resolve_inside
+
+    def swap_after_resolve(root, relative_path, *, key):
+        candidate = original_resolve(root, relative_path, key=key)
+        template.unlink()
+        template.symlink_to(outside)
+        return candidate
+
+    monkeypatch.setattr(paths_module, "resolve_inside", swap_after_resolve)
+
+    with pytest.raises(ConfigError, match="failed to read content_file"):
+        parse_service(
+            "safe",
+            {"mode": "file", "files": [{"path": "a.txt", "content_file": "body.txt"}]},
+            [repo.root / "templates"],
+        )
+
+
+def test_rejects_managed_files_base_swapped_to_external_symlink(repo, monkeypatch):
+    managed = repo.root / "managed"
+    managed.mkdir()
+    (managed / "body.txt").write_text("inside\n", encoding="utf-8")
+    outside = repo.root.parent / "outside-raced-managed-files"
+    outside.mkdir()
+    (outside / "body.txt").write_text("outside\n", encoding="utf-8")
+    original_resolve = catalog_module.resolve_inside
+
+    def swap_base_after_resolve(root, relative_path, *, key):
+        candidate = original_resolve(root, relative_path, key=key)
+        if key == "managed_files_path":
+            managed.rename(repo.root / "original-managed")
+            managed.symlink_to(outside, target_is_directory=True)
+        return candidate
+
+    monkeypatch.setattr(catalog_module, "resolve_inside", swap_base_after_resolve)
+
+    with pytest.raises(ConfigError, match="resolves outside|failed to read"):
+        load_catalog(
+            repo.root,
+            {
+                "managed_files_path": "managed",
+                "service_definitions": {
+                    "safe": {
+                        "mode": "file",
+                        "files": [
+                            {"path": "out.txt", "content_file": "body.txt"}
+                        ],
+                    }
+                },
+            },
+        )
+
+
 def test_rejects_unknown_mode():
     with pytest.raises(ConfigError):
         parse_service("bad", {"mode": "teleport", "files": [{"path": "a.txt", "content": "x"}]})
+
+
+@pytest.mark.parametrize("name", ["bad name", "bad\n::warning::forged", "bad:name"])
+def test_rejects_unsafe_service_name(name):
+    with pytest.raises(ConfigError, match="service name"):
+        parse_service(name, {"mode": "file", "files": [{"path": "a.txt", "content": "x"}]})
 
 
 def test_requires_files():
@@ -78,6 +166,37 @@ def test_requires_files():
 def test_requires_content_source():
     with pytest.raises(ConfigError):
         parse_service("bad", {"mode": "file", "files": [{"path": "a.txt"}]})
+
+
+def test_rejects_multiple_content_sources():
+    with pytest.raises(ConfigError, match="exactly one"):
+        parse_service(
+            "bad",
+            {
+                "mode": "file",
+                "files": [{"path": "a.txt", "content": "x", "content_lines": ["y"]}],
+            },
+        )
+
+
+def test_content_lines_must_be_a_list():
+    with pytest.raises(ConfigError, match="content_lines"):
+        parse_service(
+            "bad",
+            {"mode": "file", "files": [{"path": "a.txt", "content_lines": "abc"}]},
+        )
+
+
+def test_rejects_comment_prefix_with_control_characters():
+    with pytest.raises(ConfigError, match="comment_prefix"):
+        parse_service(
+            "bad",
+            {
+                "files": [
+                    {"path": "a.txt", "content": "x", "comment_prefix": "#\n::warning::"}
+                ]
+            },
+        )
 
 
 def test_content_file_is_loaded(repo):
@@ -116,6 +235,11 @@ def test_resolve_services_from_mapping(repo):
     assert [s.name for s in services] == ["common"]
 
 
+def test_service_mapping_values_must_be_boolean(repo):
+    with pytest.raises(ConfigError, match="true or false"):
+        resolve_services(load_catalog(repo.root), {"services": {"common": "false"}})
+
+
 def test_disabled_services_are_skipped(repo):
     catalog = load_catalog(repo.root)
     section = {"services": ["common", "dotfiles"], "disabled_services": ["dotfiles"]}
@@ -148,7 +272,13 @@ def test_input_services_override_config(repo):
 def test_bundle_expands_to_members(repo):
     catalog = load_catalog(repo.root)
     services = resolve_services(catalog, {"services": ["baseline"]})
-    assert [s.name for s in services] == ["common", "lf_line_endings", "dotfiles", "markdownlint"]
+    assert [s.name for s in services] == [
+        "common",
+        "lf_line_endings",
+        "dotfiles",
+        "markdownlint",
+        "dependabot_actions",
+    ]
 
 
 def test_bundle_members_are_deduplicated(repo):
@@ -225,6 +355,69 @@ def test_conflicting_whole_file_services_are_rejected(repo):
         resolve_services(catalog, section)
 
 
+@pytest.mark.parametrize(("first_mode", "second_mode"), [("file", "absent"), ("block", "file")])
+def test_cross_mode_path_conflicts_are_rejected(repo, first_mode, second_mode):
+    section = {
+        "services": ["a", "b"],
+        "service_definitions": {
+            "a": {"mode": first_mode, "files": [{"path": "same.txt", "content": "a"}]},
+            "b": {"mode": second_mode, "files": [{"path": "same.txt", "content": "b"}]},
+        },
+    }
+    catalog = load_catalog(repo.root, section)
+
+    with pytest.raises(ConfigError, match="both claim"):
+        resolve_services(catalog, section)
+
+
+def test_normalized_path_aliases_conflict(repo):
+    section = {
+        "services": ["a", "b"],
+        "service_definitions": {
+            "a": {"mode": "file", "files": [{"path": "same.txt", "content": "a"}]},
+            "b": {"mode": "file", "files": [{"path": "./same.txt", "content": "b"}]},
+        },
+    }
+
+    with pytest.raises(ConfigError, match="both claim"):
+        resolve_services(load_catalog(repo.root, section), section)
+
+
+def test_service_cannot_claim_the_same_path_twice(repo):
+    section = {
+        "services": ["duplicate"],
+        "service_definitions": {
+            "duplicate": {
+                "files": [
+                    {"path": "same.txt", "content": "a"},
+                    {"path": "same.txt", "content": "b"},
+                ]
+            }
+        },
+    }
+
+    with pytest.raises(ConfigError, match="more than once"):
+        resolve_services(load_catalog(repo.root, section), section)
+
+
+def test_duplicate_claim_is_rejected_after_another_block_service(repo):
+    section = {
+        "services": ["first", "duplicate"],
+        "service_definitions": {
+            "first": {"files": [{"path": "same.txt", "content": "first"}]},
+            "duplicate": {
+                "files": [
+                    {"path": "same.txt", "content": "a"},
+                    {"path": "same.txt", "content": "b"},
+                ]
+            },
+        },
+    }
+
+    with pytest.raises(ConfigError, match="more than once"):
+        resolve_services(load_catalog(repo.root, section), section)
+
+
 def test_block_services_may_share_a_path(repo):
     section = {
         "services": ["a", "b"],
@@ -272,6 +465,33 @@ def test_load_catalog_uses_custom_managed_files_path(repo):
 def test_load_catalog_rejects_invalid_managed_files_path(repo):
     section = {"managed_files_path": "../outside"}
     with pytest.raises(ConfigError):
+        load_catalog(repo.root, section)
+
+
+def test_load_catalog_rejects_managed_files_symlink_escape(repo):
+    outside = repo.root.parent / "outside-managed-files"
+    outside.mkdir()
+    (repo.root / "managed-link").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ConfigError, match="resolves outside"):
+        load_catalog(repo.root, {"managed_files_path": "managed-link"})
+
+
+def test_load_catalog_rejects_content_symlink_outside_managed_files(repo):
+    repo.write("private.txt", "must not be imported\n")
+    template = repo.root / ".github/managed-files/private.txt"
+    template.parent.mkdir(parents=True)
+    template.symlink_to(repo.root / "private.txt")
+    section = {
+        "service_definitions": {
+            "unsafe": {
+                "mode": "file",
+                "files": [{"path": "output.txt", "content_file": "private.txt"}],
+            }
+        }
+    }
+
+    with pytest.raises(ConfigError, match="failed to read content_file"):
         load_catalog(repo.root, section)
 
 

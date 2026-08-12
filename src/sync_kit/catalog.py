@@ -13,15 +13,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .config import find_config, load_repo_config
+from .config import find_config, load_repo_config, marker_identifier
 from .errors import ConfigError
+from .paths import normalize_relative_path, read_utf8_file_inside, resolve_inside
 
 VALID_MODES = ("block", "file", "init", "absent")
 
-# Modes where two enabled services claiming the same path would fight each other.
-EXCLUSIVE_MODES = ("file", "init", "absent")
-
 MAX_BUNDLE_DEPTH = 10
+
+
+@dataclass(frozen=True)
+class _ContentRoot:
+    root: Path
+    relative_path: str
 
 
 @dataclass(frozen=True)
@@ -47,29 +51,50 @@ class Service:
     includes: tuple[str, ...] = ()
 
 
-def _read_content(entry: dict[str, Any], base_dirs: Iterable[Path]) -> str:
+def _read_content(
+    entry: dict[str, Any],
+    base_dirs: Iterable[Path | _ContentRoot],
+) -> str:
     """Resolve ``content`` / ``content_lines`` / ``content_file`` on an entry."""
+    sources = [key for key in ("content", "content_lines", "content_file") if key in entry]
+    if len(sources) != 1:
+        raise ConfigError(
+            "service file needs exactly one of: content, content_lines, content_file"
+        )
     if "content" in entry:
         content = entry["content"]
         if isinstance(content, list):
             return "\n".join(str(line) for line in content)
         return str(content)
     if "content_lines" in entry:
-        return "\n".join(str(line) for line in entry["content_lines"])
-    if "content_file" in entry:
-        rel = str(entry["content_file"])
-        if Path(rel).is_absolute() or ".." in Path(rel).parts:
-            raise ConfigError(f"content_file must be a relative path inside the repo: {rel}")
-        for base in base_dirs:
-            candidate = base / rel
-            if candidate.is_file():
-                return candidate.read_text(encoding="utf-8")
-        raise ConfigError(f"content_file not found: {rel}")
-    raise ConfigError("service file needs one of: content, content_lines, content_file")
+        content_lines = entry["content_lines"]
+        if not isinstance(content_lines, list):
+            raise ConfigError("service file 'content_lines' must be a JSON array")
+        return "\n".join(str(line) for line in content_lines)
+
+    rel = normalize_relative_path(entry["content_file"], key="content_file")
+    for base in base_dirs:
+        if isinstance(base, _ContentRoot):
+            anchored_path = (Path(base.relative_path) / rel).as_posix()
+            content = read_utf8_file_inside(
+                base.root,
+                anchored_path,
+                key="content_file",
+            )
+        else:
+            content = read_utf8_file_inside(base, rel, key="content_file")
+        if content is not None:
+            return content
+    raise ConfigError(f"content_file not found: {rel}")
 
 
-def parse_service(name: str, spec: dict[str, Any], base_dirs: Iterable[Path] = ()) -> Service:
+def parse_service(
+    name: str,
+    spec: dict[str, Any],
+    base_dirs: Iterable[Path | _ContentRoot] = (),
+) -> Service:
     """Turn a raw service definition into a validated :class:`Service`."""
+    name = marker_identifier(name, "service name")
     if not isinstance(spec, dict):
         raise ConfigError(f"service '{name}' must be a JSON object")
 
@@ -81,14 +106,16 @@ def parse_service(name: str, spec: dict[str, Any], base_dirs: Iterable[Path] = (
     if includes is not None:
         if not isinstance(includes, list) or not includes:
             raise ConfigError(f"service '{name}' has an empty or non-list 'includes'")
-        if spec.get("files"):
+        if "files" in spec:
             raise ConfigError(f"service '{name}' must define either 'includes' or 'files', not both")
         return Service(
             name=name,
             mode=mode,
             files=(),
             description=str(spec.get("description", "")),
-            includes=tuple(str(item) for item in includes),
+            includes=tuple(
+                marker_identifier(item, f"service '{name}' include") for item in includes
+            ),
         )
 
     raw_files = spec.get("files")
@@ -100,12 +127,10 @@ def parse_service(name: str, spec: dict[str, Any], base_dirs: Iterable[Path] = (
     for entry in raw_files:
         if not isinstance(entry, dict):
             raise ConfigError(f"service '{name}' has a non-object file entry")
-        path = str(entry.get("path", "")).strip()
-        if not path:
+        raw_path = entry.get("path", "")
+        if not str(raw_path).strip():
             raise ConfigError(f"service '{name}' has a file entry without 'path'")
-        # Containment check: service definitions must never write outside the repo.
-        if Path(path).is_absolute() or ".." in Path(path).parts:
-            raise ConfigError(f"service '{name}' path must stay inside the repo: {path}")
+        path = normalize_relative_path(raw_path, key=f"service '{name}' path")
         file_mode = str(entry.get("mode", mode))
         if file_mode not in VALID_MODES:
             raise ConfigError(f"service '{name}' file '{path}' has unknown mode '{file_mode}'")
@@ -114,12 +139,22 @@ def parse_service(name: str, spec: dict[str, Any], base_dirs: Iterable[Path] = (
             raise ConfigError(f"service '{name}' file '{path}': 'scaffold' only applies to block mode")
         if isinstance(scaffold, list):
             scaffold = "\n".join(str(line) for line in scaffold)
+        comment_prefix = entry.get("comment_prefix")
+        if comment_prefix is not None:
+            comment_prefix = str(comment_prefix)
+            if any(
+                ord(character) < 32 or ord(character) == 127
+                for character in comment_prefix
+            ):
+                raise ConfigError(
+                    f"service '{name}' file '{path}' has an invalid comment_prefix"
+                )
         files.append(
             ManagedFile(
                 path=path,
                 content="" if file_mode == "absent" else _read_content(entry, base_dirs),
                 mode=file_mode,
-                comment_prefix=entry.get("comment_prefix"),
+                comment_prefix=comment_prefix,
                 scaffold=None if scaffold is None else str(scaffold),
             )
         )
@@ -159,17 +194,25 @@ def load_catalog(
     path_value = managed_files_path if managed_files_path is not None else effective_section.get("managed_files_path")
     if path_value in (None, ""):
         path_value = ".github/managed-files"
-    rel_managed_path = Path(str(path_value))
-    if rel_managed_path.is_absolute() or ".." in rel_managed_path.parts:
-        raise ConfigError(
-            f"managed_files_path must be a relative path inside the repo: {path_value}"
-        )
-    managed_files_dir = root / rel_managed_path
+    rel_managed_path = normalize_relative_path(
+        path_value,
+        key="managed_files_path",
+        allow_current=True,
+    )
+    resolved_root = root.resolve()
+    managed_files_dir = resolve_inside(
+        resolved_root,
+        rel_managed_path,
+        key="managed_files_path",
+    )
+    anchored_managed_path = managed_files_dir.relative_to(resolved_root).as_posix()
 
     # `content_file` sources for repo/global service_definitions come from
     # managed_files_path. Destination is still set explicitly per service via
     # files[].path.
-    base_dirs: list[Path] = [managed_files_dir]
+    base_dirs: list[Path | _ContentRoot] = [
+        _ContentRoot(resolved_root, anchored_managed_path)
+    ]
 
     overrides = effective_section.get("service_definitions") or {}
     if not isinstance(overrides, dict):
@@ -191,6 +234,9 @@ def resolve_services(
     else:
         enabled = section.get("services", [])
         if isinstance(enabled, dict):
+            invalid = [name for name, on in enabled.items() if not isinstance(on, bool)]
+            if invalid:
+                raise ConfigError("'services' object values must be true or false")
             names = [str(name) for name, on in enabled.items() if on]
         elif isinstance(enabled, list):
             names = [str(name) for name in enabled]
@@ -205,8 +251,17 @@ def resolve_services(
         *(str(name) for name in section.get("exclude_services", [])),
     }
     resolved: list[Service] = []
+    resolved_names: set[str] = set()
     unknown: list[str] = []
-    _expand(names, catalog, disabled, resolved, unknown, depth=0)
+    _expand(
+        names,
+        catalog,
+        disabled,
+        resolved,
+        resolved_names,
+        unknown,
+        depth=0,
+    )
 
     if unknown:
         raise ConfigError(
@@ -223,6 +278,7 @@ def _expand(
     catalog: dict[str, Service],
     disabled: set[str],
     resolved: list[Service],
+    resolved_names: set[str],
     unknown: list[str],
     depth: int,
 ) -> None:
@@ -233,32 +289,54 @@ def _expand(
         name = raw_name.strip()
         if not name or name in disabled:
             continue
+        name = marker_identifier(name, "service name")
         service = catalog.get(name)
         if service is None:
             unknown.append(name)
         elif service.includes:
-            _expand(service.includes, catalog, disabled, resolved, unknown, depth + 1)
-        elif service not in resolved:
+            _expand(
+                service.includes,
+                catalog,
+                disabled,
+                resolved,
+                resolved_names,
+                unknown,
+                depth + 1,
+            )
+        elif name not in resolved_names:
             resolved.append(service)
+            resolved_names.add(name)
 
 
 def check_conflicts(services: Iterable[Service]) -> None:
-    """Reject two enabled services that claim the same whole-file path.
+    """Reject enabled services with ambiguous ownership of a managed path.
 
-    Co-targeting definitions are legal in a catalog (per-language variants of
-    the same file, for example); enabling more than one in a single repo is
-    not, because the last one to run would silently win.
+    Distinct block services may safely share a file because their markers are
+    independent. Every other combination is order-dependent and rejected.
     """
-    owners: dict[tuple[str, str], str] = {}
+    owners: dict[str, tuple[str, str]] = {}
+    claims: set[tuple[str, str]] = set()
     for service in services:
         for managed in service.files:
-            if managed.mode not in EXCLUSIVE_MODES:
-                continue
-            key = (managed.mode, managed.path)
-            owner = owners.get(key)
-            if owner is not None and owner != service.name:
+            path = normalize_relative_path(
+                managed.path,
+                key=f"service '{service.name}' path",
+            )
+            claim = (service.name, path)
+            if claim in claims:
                 raise ConfigError(
-                    f"services '{owner}' and '{service.name}' both claim {managed.mode}-mode "
-                    f"path '{managed.path}'. Enable at most one of them per repo."
+                    f"service '{service.name}' claims path '{path}' more than once"
                 )
-            owners[key] = service.name
+            claims.add(claim)
+            owner = owners.get(path)
+            if owner is None:
+                owners[path] = (service.name, managed.mode)
+                continue
+
+            owner_name, owner_mode = owner
+            if owner_mode == managed.mode == "block":
+                continue
+            raise ConfigError(
+                f"services '{owner_name}' ({owner_mode}) and '{service.name}' "
+                f"({managed.mode}) both claim path '{path}'"
+            )

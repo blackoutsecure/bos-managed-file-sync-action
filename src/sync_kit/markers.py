@@ -75,10 +75,10 @@ COMMENTLESS_SUFFIXES = frozenset({".json", ".lock"})
 
 def comment_prefix_for(path: str) -> str:
     """Pick the comment syntax used to wrap a managed block in ``path``."""
-    name = Path(path).name
-    if name in COMMENT_PREFIXES_BY_NAME:
-        return COMMENT_PREFIXES_BY_NAME[name]
-    return COMMENT_PREFIXES.get(Path(path).suffix.lower(), FALLBACK_COMMENT_PREFIX)
+    target = Path(path)
+    if target.name in COMMENT_PREFIXES_BY_NAME:
+        return COMMENT_PREFIXES_BY_NAME[target.name]
+    return COMMENT_PREFIXES.get(target.suffix.lower(), FALLBACK_COMMENT_PREFIX)
 
 
 def supports_comments(path: str) -> bool:
@@ -104,9 +104,8 @@ def marker_lines(service: str, prefix: str, namespace: str = DEFAULT_NAMESPACE) 
     return f"{prefix} {start}", f"{prefix} {end}"
 
 
-def _marker_pattern(service: str, namespace: str, kind: str) -> re.Pattern[str]:
-    token = ">>>" if kind == "start" else "<<<"
-    return re.compile(rf"{re.escape(token)}\s*{re.escape(namespace)}:{re.escape(service)}\b")
+def _is_marker_line(line: str, marker: str) -> bool:
+    return line.rstrip("\r\n").strip() == marker.strip()
 
 
 def render_block(
@@ -125,11 +124,20 @@ def render_block(
     parts = [start]
     if note:
         parts.extend(comment_lines(note, prefix))
-    body = content.strip("\n")
+    body = content.strip("\r\n")
     if body:
         parts.append(body)
     parts.append(end)
-    return "\n".join(parts)
+    rendered = "\n".join(parts)
+    rendered_lines = rendered.splitlines()
+    if (
+        sum(_is_marker_line(line, start) for line in rendered_lines) != 1
+        or sum(_is_marker_line(line, end) for line in rendered_lines) != 1
+    ):
+        raise MarkerError(
+            f"managed content or note for service '{service}' contains a marker line"
+        )
+    return rendered
 
 
 def apply_block(
@@ -146,25 +154,63 @@ def apply_block(
     otherwise. Content outside the markers is preserved byte for byte.
     """
     block = render_block(service, content, prefix, namespace, note)
-    lines = existing.splitlines()
-    start_re = _marker_pattern(service, namespace, "start")
-    end_re = _marker_pattern(service, namespace, "end")
+    lines = existing.splitlines(keepends=True)
+    start_marker, end_marker = marker_lines(service, prefix, namespace)
+    start_indices = [
+        index
+        for index, line in enumerate(lines)
+        if _is_marker_line(line, start_marker)
+    ]
+    end_indices = [
+        index
+        for index, line in enumerate(lines)
+        if _is_marker_line(line, end_marker)
+    ]
 
-    start_index = next((i for i, line in enumerate(lines) if start_re.search(line)), None)
-    if start_index is None:
-        if not existing.strip():
-            return block + "\n"
-        separator = "" if existing.endswith("\n") else "\n"
-        return f"{existing}{separator}\n{block}\n"
+    if not start_indices and not end_indices:
+        line_ending = _preferred_line_ending(existing)
+        rendered = _use_line_ending(block, line_ending)
+        if not existing:
+            return rendered + line_ending
+        separator = "" if existing.endswith(("\n", "\r")) else line_ending
+        return f"{existing}{separator}{line_ending}{rendered}{line_ending}"
 
-    end_index = next(
-        (i for i in range(start_index + 1, len(lines)) if end_re.search(lines[i])),
-        None,
-    )
-    if end_index is None:
+    if len(start_indices) != 1 or len(end_indices) != 1:
         raise MarkerError(
-            f"unterminated managed block for service '{service}': found the start marker "
-            f"but no '<<< {namespace}:{service}' end marker"
+            f"managed block for service '{service}' must contain exactly one start marker "
+            "and one end marker"
+        )
+    start_index = start_indices[0]
+    end_index = end_indices[0]
+    if end_index < start_index:
+        raise MarkerError(
+            f"managed block for service '{service}' has its end marker before its start marker"
         )
 
-    return "\n".join(lines[:start_index] + block.splitlines() + lines[end_index + 1 :]) + "\n"
+    start_offset = sum(len(line) for line in lines[:start_index])
+    end_offset = start_offset + sum(
+        len(line) for line in lines[start_index : end_index + 1]
+    )
+    line_ending = _line_ending(lines[start_index]) or _preferred_line_ending(existing)
+    replacement = _use_line_ending(block, line_ending)
+    replacement += _line_ending(lines[end_index])
+    return existing[:start_offset] + replacement + existing[end_offset:]
+
+
+def _line_ending(line: str) -> str:
+    if line.endswith("\r\n"):
+        return "\r\n"
+    if line.endswith("\n"):
+        return "\n"
+    if line.endswith("\r"):
+        return "\r"
+    return ""
+
+
+def _preferred_line_ending(text: str) -> str:
+    match = re.search(r"\r\n|\n|\r", text)
+    return match.group(0) if match else "\n"
+
+
+def _use_line_ending(text: str, line_ending: str) -> str:
+    return text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", line_ending)

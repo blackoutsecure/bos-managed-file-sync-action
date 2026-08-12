@@ -36,6 +36,39 @@ def test_replaces_block_in_place_and_preserves_surroundings():
     assert result.endswith("bottom\n")
 
 
+def test_service_name_does_not_match_a_longer_marker_name():
+    original = (
+        "# >>> managed-file-sync:foo-bar >>>\n"
+        "keep\n"
+        "# <<< managed-file-sync:foo-bar <<<\n"
+    )
+    result = apply_block(original, "foo", "new", "#")
+
+    assert "keep" in result
+    assert result.count("managed-file-sync:foo-bar") == 2
+    assert result.count("managed-file-sync:foo >>>") == 1
+
+
+def test_replacement_preserves_crlf_outside_the_managed_block():
+    original = (
+        "top\r\n"
+        "# >>> managed-file-sync:common >>>\r\n"
+        "old\r\n"
+        "# <<< managed-file-sync:common <<<\r\n"
+        "bottom\r\n"
+    )
+
+    result = apply_block(original, "common", "new", "#")
+
+    assert result == (
+        "top\r\n"
+        "# >>> managed-file-sync:common >>>\r\n"
+        "new\r\n"
+        "# <<< managed-file-sync:common <<<\r\n"
+        "bottom\r\n"
+    )
+
+
 def test_idempotent():
     once = apply_block("", "common", "value", "#")
     assert apply_block(once, "common", "value", "#") == once
@@ -44,6 +77,42 @@ def test_idempotent():
 def test_unterminated_block_raises():
     with pytest.raises(MarkerError):
         apply_block("# >>> managed-file-sync:common >>>\nvalue\n", "common", "value", "#")
+
+
+def test_marker_text_inside_content_does_not_end_block():
+    content = "documentation mentions <<< managed-file-sync:common <<< inline"
+    once = apply_block("", "common", content, "#")
+
+    assert apply_block(once, "common", content, "#") == once
+
+
+@pytest.mark.parametrize(
+    ("content", "note"),
+    [
+        ("# <<< managed-file-sync:common <<<", None),
+        ("value", ">>> managed-file-sync:common >>>"),
+    ],
+)
+def test_complete_marker_line_in_generated_block_is_rejected(content, note):
+    with pytest.raises(MarkerError, match="content or note"):
+        apply_block("", "common", content, "#", note=note)
+
+
+def test_duplicate_complete_markers_are_rejected():
+    existing = (
+        "# >>> managed-file-sync:common >>>\n"
+        "# >>> managed-file-sync:common >>>\n"
+        "value\n"
+        "# <<< managed-file-sync:common <<<\n"
+    )
+
+    with pytest.raises(MarkerError, match="exactly one"):
+        apply_block(existing, "common", "new", "#")
+
+
+def test_orphaned_end_marker_is_rejected():
+    with pytest.raises(MarkerError, match="exactly one"):
+        apply_block("# <<< managed-file-sync:common <<<\n", "common", "new", "#")
 
 
 def test_empty_content_still_writes_markers():
