@@ -1,0 +1,91 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bos-managed-file-sync"
+version = "1.0.0"
+description = "Config-driven managed-file sync — keep canonical repo files and managed blocks in sync across repositories."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+authors = [{name = "Blackout Secure"}]
+keywords = [
+  "github",
+  "actions",
+  "repo-standardization",
+  "drift-detection",
+  "managed-files",
+  "codeowners",
+  "dependabot",
+  "editorconfig",
+  "composite-action",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Intended Audience :: System Administrators",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Quality Assurance",
+  "Topic :: System :: Systems Administration",
+]
+# Runtime is pure stdlib by design — no third-party dependency in the sync path.
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.6",
+  "PyYAML>=6.0",
+]
+
+[project.scripts]
+bos-sync = "sync_kit.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/blackoutsecure/bos-managed-file-sync-action"
+Issues = "https://github.com/blackoutsecure/bos-managed-file-sync-action/issues"
+Source = "https://github.com/blackoutsecure/bos-managed-file-sync-action"
+
+[tool.pytest.ini_options]
+# Lets contributors run the suite without `pip install -e .`. CI still
+# installs the package editable so the console-script entrypoint
+# (`bos-sync`) is also exercised end-to-end.
+pythonpath = ["src"]
+testpaths = ["test"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = [".venv", "venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM"]
+ignore = [
+  "E501",  # line length is enforced by `line-length`; long URLs in docs are fine
+  "S101",  # `assert` is normal in pytest
+]
+
+[tool.ruff.lint.per-file-ignores]
+"test/**" = ["S", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["sync_kit"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sync_kit"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "src/sync_kit",
+  "README.md",
+  "LICENSE",
+  "NOTICE",
+  "pyproject.toml",
+  "test",
+]

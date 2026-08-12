@@ -1,0 +1,84 @@
+{
+  "target_repo_role": "consumer",
+  "security": {
+    "enable_lint": true,
+    "enable_node_lint": false,
+    "node_version": "20",
+    "enable_python_lint": true,
+    "python_version": "3.12",
+    "enable_shell_lint": false,
+    "enable_dependency_review": true,
+    "enable_code_scan": true,
+    "enable_pinned_actions_check": true,
+    "enable_pr_title_check": true,
+    "pr_title_types": "feat,fix,docs,style,refactor,perf,test,build,ci,chore,revert",
+    "enable_readme_header_check": true,
+    "readme_header_profile": "marketplace",
+    "code_scan_fail_on": "fail",
+    "code_scan_http_timeout": "20"
+  },
+  "marketplace": {
+    "enabled": true,
+    "source_branch": "dev",
+    "target_branch": "main",
+    "allowlist_paths": [
+      "action.yml",
+      "README.md",
+      "LICENSE",
+      "NOTICE",
+      "src/**",
+      "test/**",
+      "scripts/**",
+      "pyproject.toml"
+    ],
+    "blocked_paths": [
+      ".github/workflows/"
+    ],
+    "required_paths": [
+      "action.yml",
+      "README.md",
+      "LICENSE",
+      "NOTICE"
+    ],
+    "repo_metadata": {
+      "enable": true,
+      "homepage": "https://github.com/marketplace/actions/blackout-secure-managed-file-sync",
+      "generate_topics": true,
+      "topics_fallback": "github-actions managed-files repo-standardization drift-detection dotfiles codeowners dependabot editorconfig composite-action devops"
+    },
+    "extra_sync_paths": []
+  },
+  "sync": {
+    "services": [
+      "common",
+      "lf_line_endings",
+      "dependabot_actions",
+      "dependabot_pip",
+      "python",
+      "markdownlint",
+      "shellcheckrc",
+      "bos_universal_config"
+    ],
+    "mode": "commit",
+    "commit_message": "chore: sync managed files from bos-automation-hub",
+    "runs_on": "ubuntu-latest",
+    "timeout_minutes": 5
+  },
+  "general": {
+    "action_test": {
+      "python_versions": ["3.10", "3.11", "3.12"],
+      "os_matrix": ["ubuntu-latest"],
+      "requirements_file": "requirements-dev.txt",
+      "pytest_args": "-q",
+      "enable_smoke_test": false,
+      "smoke_trigger": "push-dev",
+      "smoke_test_config": {},
+      "timeout_pytest": 10,
+      "timeout_smoke": 5
+    }
+  },
+  "managed_file_sync": {
+    "//": "This repo's own managed files are owned by bos-automation-hub (see the `sync` section above), so no services are enabled here. `self-sync.yml` dogfoods the in-tree composite against a scratch repo.",
+    "services": []
+  }
+}

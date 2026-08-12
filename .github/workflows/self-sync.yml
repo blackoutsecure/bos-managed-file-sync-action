@@ -1,0 +1,97 @@
+# Self-sync: run THE action's own composite against a scratch repo built
+# from a minimal inline config. This is the canonical dogfood — if
+# the action can't sync a repo cleanly, the action doesn't ship.
+#
+# Notes on choices:
+#   * `uses: ./` runs the version of `action.yml` on the current branch
+#     (NOT a tagged release). A PR that breaks the action breaks this
+#     workflow.
+#   * The scratch directory is used instead of the repo root because this
+#     repo's own managed files are owned by `bos-automation-hub` (see the
+#     `sync` section of `bos-universal-config.json`). Syncing the root
+#     would fight the hub for the same files.
+#   * The three legs assert the full contract: dry-run reports drift and
+#     writes nothing, apply reconciles, and a re-run is clean under
+#     `fail_on_drift`.
+#
+# Lives on `dev` only — never promoted (Marketplace publishing prohibits
+# workflows on the default branch).
+name: Self-sync · dogfood action against scratch repo
+
+"on":
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-sync-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  self-sync:
+    name: Self-sync (scratch repo)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Build scratch repo
+        run: |
+          set -euo pipefail
+          mkdir -p scratch
+          cat > scratch/bos-universal-config.json <<'JSON'
+          {
+            "managed_file_sync": {
+              "services": ["common", "lf_line_endings", "dependabot_actions", "dotfiles", "codeowners"],
+              "variables": {
+                "owner": "Blackout Secure",
+                "codeowner": "@blackoutsecure/security"
+              }
+            }
+          }
+          JSON
+
+      - id: dry
+        name: Sync (dry run)
+        uses: ./
+        with:
+          working_directory: scratch
+          dry_run: 'true'
+
+      - name: Assert dry run reported drift and wrote nothing
+        env:
+          CHANGED: ${{ steps.dry.outputs.changed }}
+          CHANGED_COUNT: ${{ steps.dry.outputs.changed_count }}
+        run: |
+          set -euo pipefail
+          echo "changed=${CHANGED} changed_count=${CHANGED_COUNT}"
+          [[ "${CHANGED}" == "true" ]]
+          [[ ! -f scratch/.gitignore ]]
+
+      - id: apply
+        name: Sync (apply)
+        uses: ./
+        with:
+          working_directory: scratch
+
+      - name: Show outputs
+        if: always()
+        env:
+          CHANGED_FILES: ${{ steps.apply.outputs.changed_files }}
+        run: |
+          set -euo pipefail
+          echo "${CHANGED_FILES}"
+
+      - name: Re-run must be clean
+        uses: ./
+        with:
+          working_directory: scratch
+          dry_run: 'true'
+          fail_on_drift: 'true'
