@@ -159,7 +159,7 @@ jobs:
   release:
     name: Marketplace release
     needs: parse-config
-    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.operation == 'release') }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'release' }}
     permissions:
       contents: write
       models: read
@@ -171,9 +171,9 @@ jobs:
       include_dependabot_config: ${{ fromJson(needs.parse-config.outputs.cfg).marketplace.include_dependabot_config != false }}
       include_github_metadata: ${{ fromJson(needs.parse-config.outputs.cfg).marketplace.include_github_metadata == true }}
       extra_sync_paths: ${{ fromJson(needs.parse-config.outputs.cfg).marketplace.extra_sync_paths || '' }}
-      tag_name: ${{ github.event_name == 'push' && 'v1.0.0' || inputs.tag_name }}
-      dry_run: ${{ github.event_name != 'push' && inputs.dry_run }}
-      release_draft: ${{ github.event_name != 'push' && inputs.draft }}
+      tag_name: ${{ inputs.tag_name }}
+      dry_run: ${{ inputs.dry_run }}
+      release_draft: ${{ inputs.draft }}
       release_make_latest: 'true'
       release_generate_notes: true
 
