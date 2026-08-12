@@ -29,7 +29,8 @@
       "src/**",
       "test/**",
       "scripts/**",
-      "pyproject.toml"
+      "pyproject.toml",
+      "requirements-dev.txt"
     ],
     "blocked_paths": [
       ".github/workflows/"

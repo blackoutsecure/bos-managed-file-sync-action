@@ -1,18 +1,9 @@
-# Self-sync: run THE action's own composite against a scratch repo built
-# from a minimal inline config. This is the canonical dogfood — if
-# the action can't sync a repo cleanly, the action doesn't ship.
+# Dogfood: run the in-tree composite (`uses: ./`) against a scratch repo, so a
+# PR that breaks the action breaks this workflow.
 #
-# Notes on choices:
-#   * `uses: ./` runs the version of `action.yml` on the current branch
-#     (NOT a tagged release). A PR that breaks the action breaks this
-#     workflow.
-#   * The scratch directory is used instead of the repo root because this
-#     repo's own managed files are owned by `bos-automation-hub` (see the
-#     `sync` section of `bos-universal-config.json`). Syncing the root
-#     would fight the hub for the same files.
-#   * The three legs assert the full contract: dry-run reports drift and
-#     writes nothing, apply reconciles, and a re-run is clean under
-#     `fail_on_drift`.
+# A scratch directory is used instead of the repo root because this repo's own
+# managed files are owned by bos-automation-hub (see `sync` in
+# `bos-universal-config.json`) — syncing the root would fight the hub.
 #
 # Lives on `dev` only — never promoted (Marketplace publishing prohibits
 # workflows on the default branch).

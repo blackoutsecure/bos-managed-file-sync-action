@@ -1,25 +1,12 @@
-# Thin caller for the consolidated security-scan reusable in bos-automation-hub.
+# Thin caller for the consolidated security-scan reusable in bos-automation-hub,
+# so a single hub commit propagates pin / version bumps to every repo.
 #
-# Replaces what would otherwise be a ~90-line inline CodeQL workflow with a
-# subscribe-and-forward wrapper. All CodeQL invocation logic (matrix,
-# permissions, SHA pins, queries) lives in
-# `blackoutsecure/bos-automation-hub/.github/workflows/security-scan.yml`
-# so a single hub commit propagates pin / version bumps to every repo on
-# next run.
-#
-# Transitive invocations performed by the hub-side reusable (kept inline
-# here so audit tooling and the marketplace-kit CQ001 detector can see
-# them at this repo's surface):
+# Transitive invocations performed by the hub-side reusable, kept inline so
+# audit tooling can see them at this repo's surface. Bump in lockstep with
+# `bos-automation-hub/.github/workflows/security-scan.yml`:
 #
 #   uses: github/codeql-action/init@7211b7c8077ea37d8641b6271f6a365a22a5fbfa    # v4.36.0
 #   uses: github/codeql-action/analyze@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
-#
-# Bump the SHAs above in lockstep with
-# `bos-automation-hub/.github/workflows/security-scan.yml`.
-#
-# `name: CodeQL` is intentionally conventional: GitHub's Security tab
-# surfaces this value as the SARIF tool name, and external dashboards key
-# off it.
 
 name: CodeQL
 
@@ -45,13 +32,7 @@ jobs:
       contents: read
       actions: read
     with:
-      # Covers `src/sync_kit/` (Python module), the composite `action.yml`,
-      # and all workflow YAML in `.github/workflows/`.
-      #
-      # NOTE: the string is passed to `fromJSON()` on the reusable side to
-      # drive a matrix, so it MUST be valid JSON — entries have to be
-      # DOUBLE-QUOTED strings. YAML's flow-list shorthand `[python, actions]`
-      # looks similar but is rejected with
-      # `fromJSON: Unexpected symbol: 'python'`.
+      # Passed to `fromJSON()` on the reusable side, so it must be valid JSON —
+      # YAML's `[python, actions]` shorthand is rejected there.
       codeql_languages: '["python", "actions"]'
       codeql_queries:   security-and-quality

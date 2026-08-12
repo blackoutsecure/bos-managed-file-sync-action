@@ -14,17 +14,11 @@ branding:
   color: 'blue'
   icon: 'refresh-cw'
 
-# Composite Action orchestration:
-#
-#   install → installs the kit on the runner so `bos-sync` is on PATH.
-#   sync    → resolves the service catalog, reconciles the working tree,
-#             and emits the changed-file outputs.
-#
-# Per-repo policy lives in `bos-universal-config.json` (auto-discovered at
-# the repo root, `managed_file_sync` section). The inputs below are the
-# small set of operator-level overrides for CI; everything else — which
-# services run, the canonical file contents, template variables — belongs
-# in the JSON config or in a shared catalog file.
+# Per-repo policy lives in `bos-universal-config.json` (auto-discovered at the
+# repo root, `managed_file_sync` section). The inputs below are the small set of
+# operator-level overrides for CI; everything else — which services run, the
+# canonical file contents, template variables — belongs in the JSON config or in
+# a shared catalog file.
 
 inputs:
   # ----- Config resolution -----
