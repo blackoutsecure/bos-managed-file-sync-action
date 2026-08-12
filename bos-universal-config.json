@@ -26,6 +26,7 @@
       "README.md",
       "LICENSE",
       "NOTICE",
+      ".gitignore",
       "src/**",
       "test/**",
       "scripts/**",
