@@ -161,6 +161,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'release' }}
     permissions:
       contents: write
+      models: read
     uses: blackoutsecure/bos-automation-hub/.github/workflows/release-promote.yml@main
     with:
       source_branch: ${{ fromJson(needs.parse-config.outputs.cfg).marketplace.source_branch || github.event.repository.default_branch }}
