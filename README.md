@@ -123,8 +123,8 @@ be. All three forms are supported equally.
 
 | Form | Example | When to use |
 | --- | --- | --- |
-| Floating major (default) | `blackoutsecure/bos-managed-file-sync-action@v1` | Friendly default. Auto-tracks every `v1.x.y` release as we ship fixes and new catalog services. Recommended for most callers. |
-| Immutable tag | `blackoutsecure/bos-managed-file-sync-action@v1.0.0` | Pin to a specific release. Byte-identical managed content across runs; requires manual bumps. Recommended when a surprise catalog change would break a pipeline. |
+| Floating major (default) | `blackoutsecure/bos-managed-file-sync-action@v1` | Friendly default. Auto-tracks every `v1.x.y` release as we ship fixes and service updates. Recommended for most callers. |
+| Immutable tag | `blackoutsecure/bos-managed-file-sync-action@v1.0.0` | Pin to a specific release. Byte-identical managed content across runs; requires manual bumps. Recommended when a surprise service change would break a pipeline. |
 | SHA-pinned | `blackoutsecure/bos-managed-file-sync-action@<40-char-sha> # v1.0.0` | Strictest. Survives even a malicious tag-move on this repo. Recommended for regulated / high-security callers. Use Dependabot's `package-ecosystem: github-actions` to keep the pin current. |
 
 The SHA for any tag is `git rev-list -n 1 v1.0.0` against this repo, or the
@@ -223,35 +223,7 @@ The config is merged in cascade order (each tier overrides the lower ones):
 - **Marketplace config**: `src/sync_kit/blackout-secure-managed-file-sync-marketplace-config.json` (shipped with action, read-only)
 - **Org global config**: `.github/blackout-secure-managed-file-sync-global-config.json` (optional, shared across org)
 - **Repo config**: `bos-universal-config.json` (optional, per-repo)
-- **Managed templates path**: `.github/managed-files` (default, optional)
-
-### What's in the marketplace config?
-
-The built-in `bos-sync-marketplace.json` includes:
-
-```json
-{
-  "managed_file_sync": {
-    "services": ["common", "lf_line_endings", "markdownlint"],
-    "exclude_paths": [
-      "dependabot.yml", ".dependabot/*",
-      "renovate.json", ".renovate.json",
-      "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
-      "poetry.lock"
-    ],
-    "marker_namespace": "managed-file-sync",
-    "managed_note": "Managed by Blackout Secure. See .github/blackout-secure-managed-file-sync-global-config.json and repo config."
-  }
-}
-```
-
-**Rationale for inclusions/exclusions**:
-- ✅ **`common`, `lf_line_endings`, `markdownlint`**: universally safe linters
-  and standardization; no risk of breaking project-specific config.
-- ❌ **`dependabot.yml`, `renovate.json`**: auto-update config is per-repo;
-  syncing it causes divergence and breaks dependency update automation.
-- ❌ **Lock files (`package-lock.json`, etc.)**: never sync lock files; they're
-  generated artifacts with project-specific dependency trees.
+- **Managed templates path**: `.github/managed-files` (default)
 
 ### Examples
 
@@ -322,24 +294,6 @@ Workflow:
 Result: marketplace → org → repo merged (services append by default; objects deep-merge).
 This repo gets `prettier` in addition to org services, with its own project name
 variable.
-
-#### Example 4: Disable marketplace for advanced setup
-
-If you prefer complete control, disable marketplace and build your own base:
-
-```json
-{
-  "managed_file_sync": {
-    "use_marketplace_config": false,
-    "services": ["common"],
-    "marker_namespace": "my-sync",
-    "variables": {}
-  }
-}
-```
-
-Result: only `common` synced; marketplace best practices excluded. Use this only
-if you have a good reason to deviate from recommended practices.
 
 ### Precedence rules
 
@@ -599,26 +553,6 @@ Add a `service_definitions` entry:
 
 Use `.github/managed-files` as the default template base path unless your org
 already has a standard location.
-
-Set it globally (applies to all consuming repos when global config is enabled):
-
-```json
-{
-  "managed_file_sync": {
-    "managed_files_path": ".github/managed-files"
-  }
-}
-```
-
-Set it per repo (overrides global):
-
-```json
-{
-  "managed_file_sync": {
-    "managed_files_path": ".github/managed-files"
-  }
-}
-```
 
 Service paths can be handled in two ways:
 - Use built-in services and their default managed file paths.
