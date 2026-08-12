@@ -1,5 +1,4 @@
 {
-  "target_repo_role": "consumer",
   "security": {
     "enable_lint": true,
     "enable_node_lint": false,
@@ -19,16 +18,13 @@
   },
   "marketplace": {
     "enabled": true,
-    "source_branch": "dev",
     "target_branch": "main",
     "allowlist_paths": [
       "action.yml",
       "README.md",
       "LICENSE",
       "NOTICE",
-      ".gitignore",
       "src/**",
-      "test/**",
       "scripts/**",
       "pyproject.toml"
     ],
@@ -36,11 +32,16 @@
       ".github/workflows/"
     ],
     "required_paths": [
+      ".github/dependabot.yml",
       "action.yml",
+      "src",
+      "pyproject.toml",
       "README.md",
       "LICENSE",
       "NOTICE"
     ],
+    "include_dependabot_config": true,
+    "include_github_metadata": false,
     "repo_metadata": {
       "enable": true,
       "homepage": "https://github.com/marketplace/actions/blackout-secure-managed-file-sync",
@@ -51,21 +52,7 @@
   },
   "general": {
     "action_test": {
-      "python_versions": ["3.10", "3.11", "3.12"],
-      "os_matrix": ["ubuntu-latest"],
-      "pytest_args": "-q",
-      "enable_smoke_test": false,
-      "smoke_trigger": "push-dev",
-      "smoke_test_config": {},
-      "timeout_pytest": 10,
-      "timeout_smoke": 5
+      "python_versions": ["3.10", "3.11", "3.12"]
     }
-  },
-  "managed_file_sync": {
-    "managed_files_path": ".github/managed-files",
-    "services": [
-      "python",
-      "bos_universal_config"
-    ]
   }
 }
