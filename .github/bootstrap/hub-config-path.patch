@@ -1,0 +1,102 @@
+diff --git a/.github/workflows/bos-universal-action-test.yml b/.github/workflows/bos-universal-action-test.yml
+index 7af121f..dcc7041 100644
+--- a/.github/workflows/bos-universal-action-test.yml
++++ b/.github/workflows/bos-universal-action-test.yml
+@@ -117,6 +117,7 @@ jobs:
+         id: config
+         uses: blackoutsecure/bos-automation-hub/.github/actions/shared/universal-config@main
+         with:
++          config_path: .github/bos-universal-config.json
+           allow_missing: 'false'
+
+   pytest:
+diff --git a/.github/workflows/bos-universal-launchpad.yml b/.github/workflows/bos-universal-launchpad.yml
+index 7ecfcb5..4c99872 100644
+--- a/.github/workflows/bos-universal-launchpad.yml
++++ b/.github/workflows/bos-universal-launchpad.yml
+@@ -1226,6 +1226,8 @@ jobs:
+       - name: Load universal config
+         id: config
+         uses: blackoutsecure/bos-automation-hub/.github/actions/shared/universal-config@main
++        with:
++          config_path: .github/bos-universal-config.json
+
+   # ---------------------------------------------------------------------------
+   # Stage 0 — Consolidated security scan (opt-in, gating by default).
+diff --git a/.github/workflows/bos-universal-security.yml b/.github/workflows/bos-universal-security.yml
+index 5d38be2..32aed6c 100644
+--- a/.github/workflows/bos-universal-security.yml
++++ b/.github/workflows/bos-universal-security.yml
+@@ -217,6 +217,7 @@ jobs:
+         id: config
+         uses: blackoutsecure/bos-automation-hub/.github/actions/shared/universal-config@main
+         with:
++          config_path: .github/bos-universal-config.json
+           allow_missing: 'false'
+       - name: Resolve security settings
+         id: resolve
+diff --git a/managed-files/workflows/bos-universal-launchpad-kicker.yml b/managed-files/workflows/bos-universal-launchpad-kicker.yml
+index 0aae273..92d7d5c 100644
+--- a/managed-files/workflows/bos-universal-launchpad-kicker.yml
++++ b/managed-files/workflows/bos-universal-launchpad-kicker.yml
+@@ -58,6 +58,8 @@ jobs:
+       - name: Load universal config
+         id: config
+         uses: blackoutsecure/bos-automation-hub/.github/actions/shared/universal-config@main
++        with:
++          config_path: .github/bos-universal-config.json
+
+   release:
+     name: Release
+diff --git a/managed-files/workflows/bos-universal-marketplace-kicker.yml b/managed-files/workflows/bos-universal-marketplace-kicker.yml
+index f664f3a..508ce29 100644
+--- a/managed-files/workflows/bos-universal-marketplace-kicker.yml
++++ b/managed-files/workflows/bos-universal-marketplace-kicker.yml
+@@ -73,6 +73,7 @@ jobs:
+         id: config
+         uses: blackoutsecure/bos-automation-hub/.github/actions/shared/universal-config@main
+         with:
++          config_path: .github/bos-universal-config.json
+           allow_missing: 'false'
+           require_marketplace_enabled: 'true'
+       # `uses:` refs cannot be dynamic, so resolve which hub branch this
+diff --git a/scripts/test_universal_config_contract.py b/scripts/test_universal_config_contract.py
+index 36c2e29..d3dd6b4 100644
+--- a/scripts/test_universal_config_contract.py
++++ b/scripts/test_universal_config_contract.py
+@@ -212,6 +212,8 @@ def main() -> None:
+
+     assert "managed-files-guard:" not in kicker
+     assert "bos-universal-sync.yml@main" not in workflow
++    assert "config_path: .github/bos-universal-config.json" in workflow
++    assert "config_path: .github/bos-universal-config.json" in kicker
+     assert (
+         "security_scan.enable != false" in kicker
+     ), "managed Universal callers must enable the release security gate by default"
+@@ -247,6 +249,7 @@ def main() -> None:
+     assert "enable_baseline:" not in gate_workflow
+     assert "needs.resolve-config.outputs.gate" in gate_workflow
+     assert "actions/shared/universal-config@main" in gate_workflow
++    assert "config_path: .github/bos-universal-config.json" in gate_workflow
+     assert "code_scan_fail_on:" in gate_workflow
+     assert "code_scan_http_timeout:" in gate_workflow
+     assert (
+@@ -298,6 +301,7 @@ def main() -> None:
+     assert "REPO_ADMIN_PAT: ${{ secrets.REPO_ADMIN_PAT }}" in marketplace_kicker
+     assert "RELEASE_PAT: ${{ secrets.RELEASE_PAT }}" in marketplace_kicker
+     assert "outputs.cfg" in marketplace_kicker
++    assert "config_path: .github/bos-universal-config.json" in marketplace_kicker
+     assert "pull_request_target:" in marketplace_kicker
+     assert "github.event.repository.default_branch" in marketplace_kicker
+     assert not re.search(r"source_branch:\s+dev\b", marketplace_kicker)
+@@ -447,6 +451,10 @@ def main() -> None:
+         assert refs and set(refs) == expected_refs, refs
+
+     sync_backend = (ROOT / ".github/workflows/bos-universal-sync.yml").read_text()
++    action_test_workflow = (
++        ROOT / ".github/workflows/bos-universal-action-test.yml"
++    ).read_text()
++    assert "config_path: .github/bos-universal-config.json" in action_test_workflow
+     hub_config_raw = json.loads((ROOT / ".github/bos-universal-config.json").read_text())
+     assert set(hub_config_raw) == {"security", "launchpad"}
+     global_sync_config = json.loads(

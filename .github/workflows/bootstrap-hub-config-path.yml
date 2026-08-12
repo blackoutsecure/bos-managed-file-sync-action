@@ -1,0 +1,67 @@
+name: Bootstrap hub universal config path
+"on":
+  workflow_call:
+    secrets:
+      RELEASE_PAT:
+        required: false
+      REPO_ADMIN_PAT:
+        required: false
+  push:
+    branches: [dev]
+    paths:
+      - '.github/bootstrap/hub-config-path.patch'
+      - '.github/workflows/bootstrap-hub-config-path.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  patch-hub:
+    name: Patch and validate hub dev
+    if: github.repository == 'blackoutsecure/bos-managed-file-sync-action'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout patch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: requester
+          persist-credentials: false
+
+      - name: Checkout automation hub
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: blackoutsecure/bos-automation-hub
+          ref: dev
+          fetch-depth: 0
+          path: hub
+          token: ${{ secrets.RELEASE_PAT || secrets.REPO_ADMIN_PAT }}
+
+      - name: Apply tested patch
+        env:
+          PATCH_FILE: ${{ github.workspace }}/requester/.github/bootstrap/hub-config-path.patch
+        run: |
+          set -euo pipefail
+          git -C hub apply --check "${PATCH_FILE}"
+          git -C hub apply "${PATCH_FILE}"
+
+      - name: Validate hub contracts
+        run: |
+          python3 hub/scripts/test_universal_config_contract.py
+          python3 hub/scripts/test_repo_metadata_helper.py
+
+      - name: Commit and push hub repair
+        working-directory: hub
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            .github/workflows/bos-universal-action-test.yml \
+            .github/workflows/bos-universal-launchpad.yml \
+            .github/workflows/bos-universal-security.yml \
+            managed-files/workflows/bos-universal-launchpad-kicker.yml \
+            managed-files/workflows/bos-universal-marketplace-kicker.yml \
+            scripts/test_universal_config_contract.py
+          git commit -m "fix: use canonical universal config path"
+          git push origin HEAD:dev
