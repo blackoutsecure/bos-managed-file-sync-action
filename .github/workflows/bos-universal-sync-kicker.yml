@@ -17,7 +17,6 @@ run-name: >-
   push:
     paths:
       - '.github/bos-universal-config.json'
-      - '.github/workflows/bos-universal-sync-kicker.yml'
   workflow_dispatch:
     inputs:
       mode:
