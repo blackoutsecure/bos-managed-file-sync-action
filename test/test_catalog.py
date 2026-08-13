@@ -35,6 +35,7 @@ def test_managed_file_sync_workflow_service_is_opt_in_and_renders_runner(repo):
 
     workflow = resolve_services(catalog, {"services": ["managed_file_sync_workflow"]})[0]
     assert workflow.files[0].path == ".github/workflows/managed-file-sync.yml"
+    assert workflow.files[0].mode == "update"
     assert "runs-on: {{SELECTED_RUNNER}}" in workflow.files[0].content
 
 
@@ -160,6 +161,14 @@ def test_rejects_managed_files_base_swapped_to_external_symlink(repo, monkeypatc
 def test_rejects_unknown_mode():
     with pytest.raises(ConfigError):
         parse_service("bad", {"mode": "teleport", "files": [{"path": "a.txt", "content": "x"}]})
+
+
+def test_update_mode_is_parsed():
+    service = parse_service(
+        "workflow",
+        {"mode": "update", "files": [{"path": "workflow.yml", "content": "x"}]},
+    )
+    assert service.files[0].mode == "update"
 
 
 @pytest.mark.parametrize("name", ["bad name", "bad\n::warning::forged", "bad:name"])

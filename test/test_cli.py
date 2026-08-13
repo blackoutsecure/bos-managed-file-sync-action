@@ -39,7 +39,8 @@ def test_services_flag_without_config(repo):
     assert repo.exists(".editorconfig")
 
 
-def test_managed_file_sync_workflow_service_writes_the_invoking_workflow(repo):
+def test_managed_file_sync_workflow_service_updates_the_invoking_workflow(repo):
+    repo.write(".github/workflows/managed-file-sync.yml", "name: local workflow\n")
     assert (
         main(
             [
@@ -92,6 +93,42 @@ def test_global_config_json_argument_overrides_file_based_global_config(repo):
         == EXIT_OK
     )
     assert repo.exists(".gitignore")
+
+
+def test_global_config_json_can_update_an_existing_inline_workflow_service(repo):
+    repo.write(".github/workflows/bos-universal-sync-kicker.yml", "name: local sync\n")
+
+    assert (
+        main(
+            [
+                "apply",
+                "--root",
+                str(repo.root),
+                "--global-config-json",
+                json.dumps(
+                    {
+                        "managed_file_sync": {
+                            "use_marketplace_config": False,
+                            "services": ["bos_universal_sync_kicker"],
+                            "service_definitions": {
+                                "bos_universal_sync_kicker": {
+                                    "mode": "update",
+                                    "files": [
+                                        {
+                                            "path": ".github/workflows/bos-universal-sync-kicker.yml",
+                                            "content_lines": ["name: Canonical sync"],
+                                        }
+                                    ],
+                                }
+                            },
+                        }
+                    }
+                ),
+            ]
+        )
+        == EXIT_OK
+    )
+    assert repo.read(".github/workflows/bos-universal-sync-kicker.yml") == "name: Canonical sync\n"
 
 
 def test_invalid_config_returns_config_exit_code(repo):

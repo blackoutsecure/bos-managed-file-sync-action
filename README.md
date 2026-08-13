@@ -23,10 +23,11 @@ any repo or org can extend them with its own services — no fork required.
 
 ## ✨ Features
 
-- **Four sync modes** — `block` rewrites only the region between markers in a
+- **Five sync modes** — `block` rewrites only the region between markers in a
   file you otherwise own, `file` overwrites a canonical file wholesale, `init`
-  creates a file only when it is absent and never touches it again, and
-  `absent` retires a file that a service no longer manages.
+  creates a file only when it is absent and never touches it again, `update`
+  overwrites only an existing file, and `absent` retires a file that a service
+  no longer manages.
 - **Managed blocks** — canonical content lives between
   `>>> managed-file-sync:<service> >>>` and `<<< managed-file-sync:<service> <<<`
   markers, written with the comment syntax of the target file type. The marker
@@ -336,6 +337,27 @@ checkout; automatic discovery does not fetch a config or template from another
 repository. A hub that owns the policy must publish or install its canonical
 global config into the destination checkout at the conventional path.
 
+#### Hub-owned inline workflow services
+
+To keep workflow templates owned by an automation hub rather than this action,
+the hub can pass the complete service definitions through `global_config_json`.
+Use `update` for kickers: it replaces an existing workflow but never creates a
+new one. The hub remains responsible for serializing its canonical YAML as
+`content_lines`.
+
+```yaml
+- uses: blackoutsecure/bos-managed-file-sync-action@v1
+  with:
+    global_config_json: >-
+      {"managed_file_sync":{"services":["bos_universal_sync_kicker"],"service_definitions":{"bos_universal_sync_kicker":{"mode":"update","files":[{"path":".github/workflows/bos-universal-sync-kicker.yml","content_lines":["name: Blackout Secure universal sync (kicker)","# Complete canonical workflow lines from the automation hub."]}]}}}}
+```
+
+The same object can define `bos_universal_action_test_kicker`,
+`bos_universal_launchpad_kicker`, `bos_universal_marketplace_kicker`, and
+`bos_universal_security_kicker`. Do not supply only service names: every
+inline service needs a `files` definition with canonical `content`,
+`content_lines`, or a destination-local `content_file`.
+
 ### Precedence rules
 
 When a field is defined in multiple tiers:
@@ -452,11 +474,12 @@ that invokes this action. It is deliberately opt-in and is not part of
 }
 ```
 
-The managed workflow writes to `.github/workflows/managed-file-sync.yml`. Pull
-requests run a dry-run drift check; scheduled runs and `workflow_dispatch` in
-`commit` mode apply and commit updates. A manual `check` run only reports
-drift. Override this service in global or repo config when your organization
-needs different triggers, permissions, action pins, or commit behavior.
+The service updates an existing `.github/workflows/managed-file-sync.yml` but
+does not create it. The managed workflow runs a dry-run drift check on pull
+requests; scheduled runs and `workflow_dispatch` in `commit` mode apply and
+commit updates. A manual `check` run only reports drift. Override this service
+in global or repo config when your organization needs different triggers,
+permissions, action pins, or commit behavior.
 
 ## 🧩 Managed blocks
 
@@ -605,7 +628,7 @@ Add a `service_definitions` entry:
 
 | Field | Description |
 | --- | --- |
-| `mode` | `block` (default), `file`, `init`, or `absent`. Can be overridden per file. |
+| `mode` | `block` (default), `file`, `init`, `update`, or `absent`. Can be overridden per file. |
 | `includes` | Makes the service a bundle: it expands to the listed services instead of managing files. |
 | `description` | Shown by `bos-sync services`. |
 | `files[].path` | Repo-relative path. Absolute paths and `..` are rejected. |
@@ -720,8 +743,9 @@ Recommended baseline:
   the bundled source without installing build dependencies. The action's
   `actions/setup-python` dependency is SHA-pinned.
 - **Non-destructive by default.** `block` services preserve everything outside
-  the markers, `init` services never overwrite an existing file, and `dry_run`
-  never writes. Only `file` services replace content wholesale — use them
+  the markers, `init` services never overwrite an existing file, `update`
+  services never create a missing file, and `dry_run` never writes. Only
+  `file` and `update` services replace content wholesale — use them
   deliberately.
 - **Best-effort concurrent-change detection.** Before committing and again
   immediately before each mutation, the engine rechecks each target's identity,

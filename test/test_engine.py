@@ -55,6 +55,19 @@ def test_init_service_leaves_existing_binary_file_untouched(repo):
     assert target.read_bytes() == b"\xff\xfe"
 
 
+def test_update_service_only_overwrites_existing_file(repo):
+    svc = service("workflow", "update", ".github/workflows/sync.yml", "canonical")
+
+    assert not SyncEngine(repo.root).sync([svc]).changed
+    assert not repo.exists(".github/workflows/sync.yml")
+
+    repo.write(".github/workflows/sync.yml", "hand edited\n")
+    result = SyncEngine(repo.root).sync([svc])
+
+    assert result.changes[0].action == "updated"
+    assert repo.read(".github/workflows/sync.yml") == "canonical\n"
+
+
 def test_dry_run_does_not_write(repo):
     result = SyncEngine(repo.root, dry_run=True).sync([service("cfg", "file", "out.txt", "x")])
     assert result.changed
