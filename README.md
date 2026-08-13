@@ -155,6 +155,8 @@ The SHA for any tag is `git rev-list -n 1 v1.0.0` against this repo, or the
 | `use_global_config` | `auto` | `auto` loads the org/hub-level global config when present. `true` requires it; `false` disables it. |
 | `global_config_path` | `.github/blackout-secure-managed-file-sync-global-config.json` | Org/hub-level config path. Auto-discovered by default and merged as the first tier; repo config (config_path) overrides it. |
 | `config_path` | _(none)_ | Path to the repo config file. Defaults to auto-discovery of `.github/bos-universal-config.json` (preferred), `bos-universal-config.json`, `managed-file-sync.json`, or `.managed-file-sync.json`. |
+| `global_config_json` | _(none)_ | Inline JSON object to merge with the org/hub-level config before the repo config is applied. Useful for one-off workflow runs without creating a file. |
+| `config_json` | _(none)_ | Inline JSON object to merge with the repo/global config. Useful for ad hoc workflow runs without creating a config file. |
 | `services` | _(none)_ | Comma or space separated list of services to sync. Overrides the service list in the config. Use `*` to select every configured file service. |
 | `managed_files_path` | _(none)_ | Optional workflow override for the managed template directory used by `content_file` entries. When empty, the merged config value is used, falling back to `.github/managed-files`. |
 | `workload_arch` | `auto` | Runner workload selection for built-in variables: `auto`, `x64`, `arm64`, or `default`. `auto` uses `RUNNER_ARCH` when available. |

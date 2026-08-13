@@ -64,6 +64,74 @@ def test_section_defaults_to_root_object(repo):
     assert load_repo_config(path, use_marketplace=False)["services"] == ["common"]
 
 
+def test_inline_config_merges_as_highest_precedence(repo):
+    repo_path = repo.write(
+        "bos-universal-config.json",
+        json.dumps({
+            "managed_file_sync": {
+                "services": ["common"],
+                "variables": {"project_name": "repo-project"},
+            }
+        }),
+    )
+
+    config = load_repo_config(
+        repo_path,
+        use_marketplace=False,
+        config_json=json.dumps({
+            "managed_file_sync": {
+                "services": ["prettier"],
+                "variables": {"project_name": "inline-project"},
+            }
+        }),
+    )
+
+    assert config["services"] == ["common", "prettier"]
+    assert config["variables"]["project_name"] == "inline-project"
+
+
+def test_inline_config_must_decode_to_object():
+    with pytest.raises(ConfigError, match="object"):
+        load_repo_config(config_json="[]")
+
+
+def test_inline_global_config_merges_below_repo_config(repo):
+    global_path = repo.write(
+        ".github/blackout-secure-managed-file-sync-global-config.json",
+        json.dumps({
+            "managed_file_sync": {
+                "services": ["dotfiles"],
+                "variables": {"org_name": "global-org", "shared": "global-value"},
+            }
+        }),
+    )
+    repo_path = repo.write(
+        "bos-universal-config.json",
+        json.dumps({
+            "managed_file_sync": {
+                "services": ["common"],
+                "variables": {"project_name": "repo-project", "shared": "repo-value"},
+            }
+        }),
+    )
+
+    config = load_repo_config(
+        repo_path,
+        global_path,
+        use_marketplace=False,
+        global_config_json=json.dumps({
+            "managed_file_sync": {
+                "services": ["prettier"],
+                "variables": {"org_name": "inline-global", "shared": "inline-value"},
+            }
+        }),
+    )
+
+    assert config["services"] == ["dotfiles", "prettier", "common"]
+    assert config["variables"]["org_name"] == "inline-global"
+    assert config["variables"]["shared"] == "repo-value"
+
+
 def test_no_config_file_yields_empty_section():
     config = load_repo_config(None, use_marketplace=False)
     assert config == {

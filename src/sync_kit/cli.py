@@ -66,6 +66,16 @@ def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--config", default=None, help="Path to repo-specific config file (overrides global)")
     parser.add_argument(
+        "--global-config-json",
+        default=None,
+        help="Inline JSON object to merge into the global config tier before repo config",
+    )
+    parser.add_argument(
+        "--config-json",
+        default=None,
+        help="Inline JSON object to merge as the highest-priority config tier",
+    )
+    parser.add_argument(
         "--managed-files-path",
         default=None,
         help="Relative path to managed file templates directory (default: .github/managed-files)",
@@ -119,6 +129,8 @@ class _Plan:
         self.section = load_repo_config(
             config_file=self.config_file,
             global_config_file=self.global_config_file,
+            global_config_json=args.global_config_json,
+            config_json=args.config_json,
         )
         self.direction = sync_direction(self.section)
         self.catalog = load_catalog(

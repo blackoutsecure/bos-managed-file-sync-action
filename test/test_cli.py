@@ -39,6 +39,43 @@ def test_services_flag_without_config(repo):
     assert repo.exists(".editorconfig")
 
 
+def test_config_json_argument_overrides_file_based_config(repo):
+    assert (
+        main(
+            [
+                "apply",
+                "--root",
+                str(repo.root),
+                "--config-json",
+                '{"managed_file_sync":{"services":["common"]}}',
+            ]
+        )
+        == EXIT_OK
+    )
+    assert repo.exists(".gitignore")
+
+
+def test_global_config_json_argument_overrides_file_based_global_config(repo):
+    repo.write(
+        ".github/blackout-secure-managed-file-sync-global-config.json",
+        '{"managed_file_sync":{"services":["dotfiles"]}}',
+    )
+
+    assert (
+        main(
+            [
+                "apply",
+                "--root",
+                str(repo.root),
+                "--global-config-json",
+                '{"managed_file_sync":{"services":["common"]}}',
+            ]
+        )
+        == EXIT_OK
+    )
+    assert repo.exists(".gitignore")
+
+
 def test_invalid_config_returns_config_exit_code(repo):
     repo.write("bos-universal-config.json", "{ broken")
     assert main(["apply", "--root", str(repo.root)]) == EXIT_CONFIG
