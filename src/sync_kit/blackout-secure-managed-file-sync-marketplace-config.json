@@ -10,7 +10,8 @@
       "lf_line_endings",
       "markdownlint",
       "dependabot_actions",
-        "editorconfig"
+      "dependabot_pip",
+      "editorconfig"
     ],
     "exclude_services": [],
     "variables": {
@@ -88,6 +89,32 @@
               "      prefix: \"chore(deps)\"",
               "    labels:",
               "      - dependencies"
+            ]
+          }
+        ]
+      },
+      "dependabot_pip": {
+        "mode": "block",
+        "description": "Dependabot updates for Python packages.",
+        "files": [
+          {
+            "path": ".github/dependabot.yml",
+            "content_lines": [
+              "  - package-ecosystem: pip",
+              "    directory: /",
+              "    target-branch: dev",
+              "    schedule:",
+              "      interval: weekly",
+              "      day: monday",
+              "      time: \"06:00\"",
+              "      timezone: \"Etc/UTC\"",
+              "    open-pull-requests-limit: 5",
+              "    commit-message:",
+              "      prefix: \"chore\"",
+              "      include: scope",
+              "    labels:",
+              "      - dependencies",
+              "      - python"
             ]
           }
         ]
@@ -192,7 +219,8 @@
           "lf_line_endings",
           "editorconfig",
           "markdownlint",
-          "dependabot_actions"
+          "dependabot_actions",
+          "dependabot_pip"
         ]
       },
       "quality_baseline": {
