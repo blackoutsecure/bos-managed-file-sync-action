@@ -188,10 +188,11 @@ def test_marketplace_kicker_supports_metadata_sync():
     assert "options: [validate, name-check, release, metadata]" in workflow
     assert "workflows/repo-metadata-sync.yml@main" in workflow
     assert "needs.release.outputs.tag_name" in workflow
-    assert "secrets: inherit" in workflow
+    assert "REPO_ADMIN_PAT: ${{ secrets.REPO_ADMIN_PAT }}" in workflow
+    assert "RELEASE_PAT: ${{ secrets.RELEASE_PAT }}" in workflow
 
     release_job = workflow.split("  release:", 1)[1].split("  metadata:", 1)[0]
-    assert "models: read" not in release_job
+    assert "models: read" in release_job
 
 
 def test_security_kicker_routes_dev_and_main_with_required_permissions():
