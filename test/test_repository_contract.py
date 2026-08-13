@@ -83,7 +83,6 @@ def test_managed_file_config_disables_duplicate_self_management():
     resolved = resolve_services(registry, section)
 
     assert section == {
-        "direction": "source-to-destination",
         "use_marketplace_config": False,
     }
     assert resolved == []
@@ -94,8 +93,8 @@ def test_universal_marketplace_publication_contract():
     marketplace = config["marketplace"]
 
     assert "source_branch" not in marketplace
-    assert marketplace["target_branch"] == "main"
-    assert marketplace["include_dependabot_config"] is True
+    assert "target_branch" not in marketplace
+    assert "include_dependabot_config" not in marketplace
     assert "include_github_metadata" not in marketplace
     assert {
         ".github/dependabot.yml",
@@ -114,7 +113,6 @@ def test_universal_marketplace_publication_contract():
         "action_test": {"python_versions": ["3.10", "3.11", "3.12"]}
     }
     assert config["managed_file_sync"] == {
-        "direction": "source-to-destination",
         "use_marketplace_config": False,
     }
 
@@ -182,14 +180,12 @@ def test_marketplace_kicker_supports_metadata_sync():
     ).read_text(encoding="utf-8")
 
     assert "options: [validate, name-check, release, metadata]" in workflow
-    assert "config_path: .github/bos-universal-config.json" in workflow
     assert "workflows/repo-metadata-sync.yml@main" in workflow
     assert "needs.release.outputs.tag_name" in workflow
-    assert "REPO_ADMIN_PAT: ${{ secrets.REPO_ADMIN_PAT }}" in workflow
-    assert "RELEASE_PAT: ${{ secrets.RELEASE_PAT }}" in workflow
+    assert "secrets: inherit" in workflow
 
     release_job = workflow.split("  release:", 1)[1].split("  metadata:", 1)[0]
-    assert "models: read" in release_job
+    assert "models: read" not in release_job
 
 
 def test_security_kicker_routes_dev_and_main_with_required_permissions():
@@ -201,7 +197,7 @@ def test_security_kicker_routes_dev_and_main_with_required_permissions():
     assert "workflows/bos-universal-security.yml@main" in workflow
     assert workflow.count("config_authoritative: true") == 2
     assert workflow.count("security-events: write") == 2
-    assert workflow.count("scanning_pat: ${{ secrets.SCANNING_PAT }}") == 2
+    assert workflow.count("secrets: inherit") == 2
 
 
 def test_action_test_kicker_routes_dev_and_main_read_only():
@@ -215,53 +211,19 @@ def test_action_test_kicker_routes_dev_and_main_read_only():
     assert "secrets:" not in workflow
 
 
-def test_sync_kicker_uses_inline_global_policy_and_commits_changes():
+def test_sync_kicker_routes_to_branch_specific_hub_workflows():
     workflow = (
         GITHUB / "workflows/bos-universal-sync-kicker.yml"
     ).read_text(encoding="utf-8")
 
     assert "- cron: '29 14 * * 1'" in workflow
     assert "- '.github/bos-universal-config.json'" in workflow
-    assert 'global_config_json: >-' in workflow
-    assert "dry_run: ${{ (inputs.mode || 'commit') == 'check' }}" in workflow
-    assert "fail_on_drift: ${{ (inputs.mode || 'commit') == 'check' }}" in workflow
-    assert "actions/shared/commit-and-push@main" in workflow
-
-    section = _folded_json(workflow, "global_config_json", indent=10)["managed_file_sync"]
-    assert section["services"] == [
-        "dotfiles",
-        "shellcheck",
-        "bos_universal_action_test_kicker",
-        "bos_universal_launchpad_kicker",
-        "bos_universal_marketplace_kicker",
-        "bos_universal_security_kicker",
-        "bos_universal_sync_kicker",
-    ]
-    assert section["exclude_services"] == ["dependabot_actions"]
-    definitions = section["service_definitions"]
-    assert set(definitions) == {
-        "bos_universal_action_test_kicker",
-        "bos_universal_launchpad_kicker",
-        "bos_universal_marketplace_kicker",
-        "bos_universal_security_kicker",
-        "bos_universal_sync_kicker",
-    }
-    for name, definition in definitions.items():
-        assert definition["mode"] == "update"
-        assert len(definition["files"]) == 1
-        managed = definition["files"][0]
-        assert managed["path"] == f".github/workflows/{name.replace('_', '-')}.yml"
-        assert managed["content_lines"]
-
-    template_content = "\n".join(
-        line
-        for definition in definitions.values()
-        for managed in definition["files"]
-        for line in managed["content_lines"]
-    )
-    assert "\\u0024{{" in workflow
-    assert "${{" in template_content
-    assert "\\u0024{{" not in template_content
+    assert "name: Resolve target hub ref" in workflow
+    assert "workflows/bos-universal-sync.yml@dev" in workflow
+    assert "workflows/bos-universal-sync.yml@main" in workflow
+    assert workflow.count("secrets: inherit") == 2
+    assert "global_config_json: >-" not in workflow
+    assert "actions/shared/commit-and-push@main" not in workflow
 
 
 def test_codeql_caller_avoids_duplicate_pull_request_scanner():

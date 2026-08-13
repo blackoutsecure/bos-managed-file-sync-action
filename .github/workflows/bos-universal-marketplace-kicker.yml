@@ -73,7 +73,6 @@ jobs:
         id: config
         uses: blackoutsecure/bos-automation-hub/.github/actions/shared/universal-config@main
         with:
-          config_path: .github/bos-universal-config.json
           allow_missing: 'false'
           require_marketplace_enabled: 'true'
       # `uses:` refs cannot be dynamic, so resolve which hub branch this
@@ -162,7 +161,6 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'release' }}
     permissions:
       contents: write
-      models: read
     uses: blackoutsecure/bos-automation-hub/.github/workflows/release-promote.yml@main
     with:
       source_branch: ${{ fromJson(needs.parse-config.outputs.cfg).marketplace.source_branch || github.event.repository.default_branch }}
@@ -211,7 +209,4 @@ jobs:
       show_deployments: ${{ fromJson(needs.parse-config.outputs.cfg).marketplace.repo_metadata.show_deployments == true }}
       show_packages: ${{ fromJson(needs.parse-config.outputs.cfg).marketplace.repo_metadata.show_packages == true }}
       dry_run: ${{ inputs.dry_run || fromJson(needs.parse-config.outputs.cfg).marketplace.repo_metadata.dry_run == true }}
-    secrets:
-      REPO_ADMIN_PAT: ${{ secrets.REPO_ADMIN_PAT }}
-      RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
-
+    secrets: inherit

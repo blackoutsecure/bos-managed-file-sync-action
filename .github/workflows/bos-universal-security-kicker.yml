@@ -31,10 +31,6 @@ jobs:
     outputs:
       target_ref: ${{ steps.target-ref.outputs.ref }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
       # `uses:` refs cannot be dynamic, so resolve which hub branch this
       # run targets here and pick the matching static-ref job below.
       - name: Resolve target hub ref
@@ -65,8 +61,7 @@ jobs:
     uses: blackoutsecure/bos-automation-hub/.github/workflows/bos-universal-security.yml@dev
     with:
       config_authoritative: true
-    secrets:
-      scanning_pat: ${{ secrets.SCANNING_PAT }}
+    secrets: inherit
 
   security-main:
     name: security (main)
@@ -80,5 +75,4 @@ jobs:
     uses: blackoutsecure/bos-automation-hub/.github/workflows/bos-universal-security.yml@main
     with:
       config_authoritative: true
-    secrets:
-      scanning_pat: ${{ secrets.SCANNING_PAT }}
+    secrets: inherit

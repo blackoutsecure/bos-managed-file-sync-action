@@ -1,16 +1,13 @@
 {
   "security": {
     "enable_python_lint": true,
-    "python_version": "3.12",
-    "readme_header_profile": "marketplace"
+    "python_version": "3.12"
   },
   "managed_file_sync": {
-    "direction": "source-to-destination",
     "use_marketplace_config": false
   },
   "marketplace": {
     "enabled": true,
-    "target_branch": "main",
     "allowlist_paths": [
       "action.yml",
       "README.md",
@@ -37,7 +34,6 @@
       "LICENSE",
       "NOTICE"
     ],
-    "include_dependabot_config": true,
     "repo_metadata": {
       "enable": true,
       "homepage": "https://github.com/marketplace/actions/blackout-secure-managed-file-sync",
