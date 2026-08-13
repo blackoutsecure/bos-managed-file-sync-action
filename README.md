@@ -44,6 +44,8 @@ any repo or org can extend them with its own services — no fork required.
 - **Actionable outputs** — `changed`, `changed_count`, `changed_files`, and
   `changed_files_json` make it trivial to open a pull request only when
   something actually moved.
+- **Job summary** — GitHub Actions runs receive a concise audit of resolved
+  configuration, totals, service-level outcomes, and every managed file.
 - **Pure-stdlib Python core** — no third-party runtime dependency at all. The
   composite Action invokes its bundled source directly, without a package
   install or online build step.
@@ -181,6 +183,15 @@ The SHA for any tag is `git rev-list -n 1 v1.0.0` against this repo, or the
 
 Exit behaviour: the step exits `0` when the tree is in sync, `1` when drift is
 detected with `fail_on_drift: 'true'`, and `2` on a config error.
+
+## Job summary
+
+When run in GitHub Actions, the action writes a Job Summary with the resolved
+configuration, success/failure totals, service-level counts, and a file-by-file
+result table. In a dry run, a file that would change is marked **Failure** so
+drift is immediately visible; files already in sync are marked **Success**. In
+apply mode, a successfully created, updated, or deleted file is marked
+**Success**.
 
 ## 🏗️ Configuration inheritance and layering
 

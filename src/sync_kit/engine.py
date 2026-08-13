@@ -61,11 +61,21 @@ class Change:
         )
 
 
+@dataclass(frozen=True)
+class FileResult:
+    """The reconciliation outcome for one service-managed file."""
+
+    service: str
+    path: str
+    action: str | None = None
+
+
 @dataclass
 class SyncResult:
     """Outcome of a sync run."""
 
     changes: list[Change] = field(default_factory=list)
+    file_results: list[FileResult] = field(default_factory=list)
     dry_run: bool = False
 
     @property
@@ -126,6 +136,9 @@ class SyncEngine:
                 change = self._plan_file(service, managed, path, state)
                 if change is not None:
                     result.changes.append(change)
+                result.file_results.append(
+                    FileResult(service=service.name, path=path, action=change.action if change else None)
+                )
 
         encoded: dict[str, bytes] = {}
         for path, state in states.items():

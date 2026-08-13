@@ -13,6 +13,7 @@ Exit codes: ``0`` in sync, ``1`` drift detected, ``2`` config error.
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import os
 import sys
@@ -28,7 +29,7 @@ from .config import (
     string_map,
     sync_direction,
 )
-from .engine import SyncEngine, SyncResult
+from .engine import FileResult, SyncEngine, SyncResult
 from .errors import ConfigError, SyncKitError
 from .paths import resolve_repo_root
 
@@ -153,6 +154,82 @@ def _write_github_output(result: SyncResult) -> None:
         raise ConfigError(f"failed to write GitHub outputs to '{output_file}': {exc}") from exc
 
 
+def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
+    """Write an at-a-glance run report when GitHub Actions provides a summary file."""
+    summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not summary_file:
+        return
+
+    failed = [item for item in result.file_results if result.dry_run and item.action]
+    succeeded = len(result.file_results) - len(failed)
+    verdict = "failure" if failed else "success"
+    service_results: dict[str, list[FileResult]] = {}
+    for item in result.file_results:
+        service_results.setdefault(item.service, []).append(item)
+
+    def escaped(value: object) -> str:
+        return html.escape(str(value), quote=True)
+
+    lines = [
+        f"## Managed file sync: {verdict}",
+        "",
+        "### Results",
+        "",
+        "| Successes | Failures | Evaluated files | Changed files |",
+        "| ---: | ---: | ---: | ---: |",
+        f"| {succeeded} | {len(failed)} | {len(result.file_results)} | {len(result.changed_files)} |",
+        "",
+        "### Configuration",
+        "",
+        "| Setting | Value |",
+        "| --- | --- |",
+        f"| Repository root | <code>{escaped(plan.root)}</code> |",
+        f"| Repository config | <code>{escaped(plan.config_file or '(none)')}</code> |",
+        f"| Global config | <code>{escaped(plan.global_config_file or '(none)')}</code> |",
+        f"| Direction | <code>{escaped(plan.direction)}</code> |",
+        f"| Marker namespace | <code>{escaped(plan.namespace)}</code> |",
+        f"| Mode | {'dry-run' if result.dry_run else 'apply'} |",
+        "",
+        "### By service",
+        "",
+        "| Service | Successes | Failures | Changed |",
+        "| --- | ---: | ---: | ---: |",
+    ]
+    for service, items in service_results.items():
+        failures = sum(result.dry_run and item.action is not None for item in items)
+        changes = sum(item.action is not None for item in items)
+        lines.append(f"| <code>{escaped(service)}</code> | {len(items) - failures} | {failures} | {changes} |")
+
+    lines.extend(
+        [
+            "",
+            "### File results",
+            "",
+            "| Status | File | Service | Result |",
+            "| --- | --- | --- | --- |",
+        ]
+    )
+    for item in result.file_results:
+        failed_item = result.dry_run and item.action is not None
+        status = "Failure" if failed_item else "Success"
+        if item.action is None:
+            detail = "Already compliant"
+        elif result.dry_run:
+            detail = f"Would be {item.action}"
+        else:
+            detail = item.action.capitalize()
+        lines.append(
+            f"| {status} | <code>{escaped(item.path)}</code> | "
+            f"<code>{escaped(item.service)}</code> | {detail} |"
+        )
+
+    try:
+        with open(summary_file, "a", encoding="utf-8") as handle:
+            handle.write("\n".join(lines) + "\n")
+    except OSError as exc:
+        raise ConfigError(f"failed to write GitHub summary to '{summary_file}': {exc}") from exc
+
+
 def _print_header(plan: _Plan, mode: str) -> None:
     print(f"bos-managed-file-sync {__version__}")
     print(f"config:    {plan.config_file or '(none — using inputs and defaults)'}")
@@ -168,7 +245,9 @@ def _run_sync(plan: _Plan, dry_run: bool, fail_on_drift: bool, show_diff: bool =
 
     if not plan.services:
         print("\nNo services enabled — nothing to do.")
-        _write_github_output(SyncResult(dry_run=dry_run))
+        result = SyncResult(dry_run=dry_run)
+        _write_github_output(result)
+        _write_github_summary(plan, result)
         return EXIT_OK
 
     engine = SyncEngine(
@@ -192,6 +271,7 @@ def _run_sync(plan: _Plan, dry_run: bool, fail_on_drift: bool, show_diff: bool =
         print("\nAll managed files are in sync.")
 
     _write_github_output(result)
+    _write_github_summary(plan, result)
 
     if fail_on_drift and result.changed:
         print("::error::managed-file-sync detected drift in managed files.", file=sys.stderr)

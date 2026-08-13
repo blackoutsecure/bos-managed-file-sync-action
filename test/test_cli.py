@@ -173,6 +173,32 @@ def test_github_output_write_failure_returns_config_exit_code(repo, monkeypatch)
     assert main(["apply", "--root", str(repo.root), "--dry-run"]) == EXIT_CONFIG
 
 
+def test_github_summary_reports_file_and_service_results(repo, monkeypatch):
+    summary_file = repo.root / "gh_summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_file))
+    repo.write_config(
+        {
+            "use_marketplace_config": False,
+            "services": ["clean", "drifted"],
+            "service_definitions": {
+                "clean": {"mode": "file", "files": [{"path": "clean.txt", "content": "ok"}]},
+                "drifted": {"mode": "file", "files": [{"path": "drifted.txt", "content": "new"}]},
+            },
+        }
+    )
+    repo.write("clean.txt", "ok\n")
+
+    assert main(["apply", "--root", str(repo.root), "--dry-run"]) == EXIT_OK
+
+    summary = summary_file.read_text(encoding="utf-8")
+    assert "## Managed file sync: failure" in summary
+    assert "| 1 | 1 | 2 | 1 |" in summary
+    assert "<code>clean</code> | 1 | 0 | 0" in summary
+    assert "<code>drifted</code> | 0 | 1 | 1" in summary
+    assert "| Success | <code>clean.txt</code> | <code>clean</code> | Already compliant |" in summary
+    assert "| Failure | <code>drifted.txt</code> | <code>drifted</code> | Would be created |" in summary
+
+
 def test_global_config_is_loaded_automatically(repo):
     repo.write_config({"services": ["common"]})
     repo.write(
