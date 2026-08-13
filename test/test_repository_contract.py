@@ -204,6 +204,23 @@ def test_action_test_kicker_routes_dev_and_main_read_only():
     assert "secrets:" not in workflow
 
 
+def test_sync_kicker_uses_inline_global_policy_and_commits_changes():
+    workflow = (
+        GITHUB / "workflows/bos-universal-sync-kicker.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "- cron: '29 14 * * 1'" in workflow
+    assert "- '.github/bos-universal-config.json'" in workflow
+    assert 'global_config_json: >-' in workflow
+    assert '"services": [' in workflow
+    assert '"dotfiles"' in workflow
+    assert '"shellcheck"' in workflow
+    assert '"dependabot_actions"' in workflow
+    assert "dry_run: ${{ (inputs.mode || 'commit') == 'check' }}" in workflow
+    assert "fail_on_drift: ${{ (inputs.mode || 'commit') == 'check' }}" in workflow
+    assert "actions/shared/commit-and-push@main" in workflow
+
+
 def test_codeql_caller_avoids_duplicate_pull_request_scanner():
     workflow = (GITHUB / "workflows/codeql.yml").read_text(encoding="utf-8")
 
