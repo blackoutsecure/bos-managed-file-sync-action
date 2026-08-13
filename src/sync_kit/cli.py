@@ -172,9 +172,10 @@ def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
     if not summary_file:
         return
 
-    failed = [item for item in result.file_results if result.dry_run and item.action]
-    succeeded = len(result.file_results) - len(failed)
-    verdict = "failure" if failed else "success"
+    pending = [item for item in result.file_results if result.dry_run and item.action]
+    compliant = [item for item in result.file_results if item.action is None]
+    applied = [item for item in result.file_results if not result.dry_run and item.action]
+    verdict = "changes pending" if pending else "complete"
     service_results: dict[str, list[FileResult]] = {}
     for item in result.file_results:
         service_results.setdefault(item.service, []).append(item)
@@ -182,35 +183,182 @@ def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
     def escaped(value: object) -> str:
         return html.escape(str(value), quote=True)
 
+    def serialize(value: object) -> str:
+        if value is None:
+            return "(none)"
+        if isinstance(value, (list, tuple, set)):
+            return ", ".join(str(item) for item in value) if value else "(none)"
+        return str(value)
+
+    def action_label(action: str | None) -> str:
+        if action is None:
+            return "Already compliant"
+        return action.capitalize()
+
+    action_counts: dict[str, int] = {
+        "Already compliant": 0,
+        "Created": 0,
+        "Updated": 0,
+        "Deleted": 0,
+    }
+    for item in result.file_results:
+        label = action_label(item.action)
+        action_counts[label] = action_counts.get(label, 0) + 1
+
+    excluded = plan.section.get("exclude_services") or []
+    disabled = plan.section.get("disabled_services") or []
+    marketplace = plan.section.get("marketplace") or {}
+    allowlist = marketplace.get("allowlist_paths") or []
+    blocked = marketplace.get("blocked_paths") or []
+    required = marketplace.get("required_paths") or []
+    repo_metadata = marketplace.get("repo_metadata") or {}
+    security = plan.section.get("security") or {}
+    general = plan.section.get("general") or {}
+
+    review_rows = [
+        ("use_marketplace_config", plan.section.get("use_marketplace_config", True)),
+        ("security.enable_python_lint", security.get("enable_python_lint")),
+        ("security.python_version", security.get("python_version")),
+        ("marketplace.enabled", marketplace.get("enabled", False)),
+        ("marketplace.allowlist_paths", allowlist),
+        ("marketplace.blocked_paths", blocked),
+        ("marketplace.required_paths", required),
+        ("marketplace.repo_metadata.enable", repo_metadata.get("enable", False)),
+        ("marketplace.repo_metadata.homepage", repo_metadata.get("homepage")),
+        ("general.action_test.python_versions", general.get("action_test", {}).get("python_versions")),
+        ("services", plan.section.get("services") or []),
+    ]
+
+    recommendations: list[str] = []
+    if plan.section.get("use_marketplace_config") is False:
+        recommendations.append("Marketplace defaults are intentionally disabled for this repo; confirm that custom policy is deliberate.")
+    else:
+        recommendations.append("Marketplace defaults remain enabled; repo policy is inheriting the standard baseline.")
+    if security.get("enable_python_lint") is True:
+        recommendations.append(f"Python linting is enabled for {security.get('python_version', 'default')}.")
+    if repo_metadata.get("enable") is True:
+        recommendations.append(f"Repo metadata automation is enabled with homepage {repo_metadata.get('homepage') or '(unspecified)'}.")
+    if allowlist:
+        recommendations.append(f"Marketplace allowlist is limited to: {serialize(allowlist)}.")
+    if blocked:
+        recommendations.append(f"Marketplace blocked paths are restricted to: {serialize(blocked)}.")
+    if required:
+        recommendations.append(f"Required marketplace paths are enforced: {serialize(required)}.")
+    if excluded:
+        recommendations.append(f"Excluded services are intentionally skipped: {serialize(excluded)}.")
+    if disabled:
+        recommendations.append(f"Disabled services are explicitly filtered out: {serialize(disabled)}.")
+    if not recommendations:
+        recommendations.append("No extra policy overrides are configured; the repo is using the default marketplace baseline.")
+
+    action_labels = ["Already compliant"]
+    action_labels.extend(["Created", "Updated", "Deleted"])
+
+    visible_actions = [label for label in action_labels if action_counts.get(label, 0)]
+    status_counts = {
+        "Compliant": len(compliant),
+        "Pending": len(pending),
+        "Applied": len(applied),
+    }
+    visible_statuses = [label for label in status_counts if status_counts[label]]
+
     lines = [
         f"## Managed file sync: {verdict}",
         "",
         "### Results",
         "",
-        "| Successes | Failures | Evaluated files | Changed files |",
-        "| ---: | ---: | ---: | ---: |",
-        f"| {succeeded} | {len(failed)} | {len(result.file_results)} | {len(result.changed_files)} |",
+        f"| {' | '.join(visible_statuses)} | Evaluated files | Changed files |",
+        f"| {' | '.join(['---:'] * len(visible_statuses))} | ---: | ---: |",
+        f"| {' | '.join(str(status_counts[label]) for label in visible_statuses)} | {len(result.file_results)} | {len(result.changed_files)} |",
         "",
-        "### Configuration",
+        "### Sync status",
         "",
-        "| Setting | Value |",
-        "| --- | --- |",
-        f"| Repository root | <code>{escaped(plan.root)}</code> |",
-        f"| Repository config | <code>{escaped(plan.config_file or '(none)')}</code> |",
-        f"| Global config | <code>{escaped(plan.global_config_file or '(none)')}</code> |",
-        f"| Direction | <code>{escaped(plan.direction)}</code> |",
-        f"| Marker namespace | <code>{escaped(plan.namespace)}</code> |",
-        f"| Mode | {'dry-run' if result.dry_run else 'apply'} |",
+        f"{'All managed files are in sync.' if not result.changed else f'Drift detected: {len(result.changed_files)} file(s) would change.' if result.dry_run else f'Applied {len(result.changed_files)} file(s) and updated the repo.'}",
         "",
-        "### By service",
+        "### Resolved configuration",
         "",
-        "| Service | Successes | Failures | Changed |",
-        "| --- | ---: | ---: | ---: |",
+        "<pre>",
+        f"config: {escaped(plan.config_file or '(none — using inputs and defaults)')}",
+        f"root: {escaped(plan.root)}",
+        f"direction: {escaped(plan.direction)}",
+        f"namespace: {escaped(plan.namespace)}",
+        f"services: {escaped(', '.join(service.name for service in plan.services) if plan.services else '(none)')}",
+        f"mode: {'dry-run' if result.dry_run else 'apply'}",
+        "</pre>",
+        "",
+        "### Action breakdown",
+        "",
+        "| Action | Count |",
+        "| --- | ---: |",
     ]
+    for label in visible_actions:
+        lines.append(f"| {label} | {action_counts.get(label, 0)} |")
+
+    lines.extend(
+        [
+            "",
+            "### Configuration",
+            "",
+            "| Setting | Value |",
+            "| --- | --- |",
+            f"| Repository root | <code>{escaped(plan.root)}</code> |",
+            f"| Repository config | <code>{escaped(plan.config_file or '(none)')}</code> |",
+            f"| Global config | <code>{escaped(plan.global_config_file or '(none)')}</code> |",
+            f"| Direction | <code>{escaped(plan.direction)}</code> |",
+            f"| Marker namespace | <code>{escaped(plan.namespace)}</code> |",
+            f"| Excluded services | <code>{escaped(serialize(excluded))}</code> |",
+            f"| Disabled services | <code>{escaped(serialize(disabled))}</code> |",
+            f"| Allowlist paths | <code>{escaped(serialize(allowlist))}</code> |",
+            f"| Blocked paths | <code>{escaped(serialize(blocked))}</code> |",
+            f"| Required paths | <code>{escaped(serialize(required))}</code> |",
+            f"| Repo metadata | <code>{escaped('enabled' if repo_metadata.get('enable', False) else 'disabled')}</code> |",
+            f"| Mode | {'dry-run' if result.dry_run else 'apply'} |",
+            "",
+            "### Full config review",
+            "",
+            "| Field | Value |",
+            "| --- | --- |",
+        ]
+    )
+    for field, value in review_rows:
+        lines.append(f"| <code>{escaped(field)}</code> | <code>{escaped(serialize(value))}</code> |")
+
+    lines.extend([
+        "",
+        "### Review recommendations",
+        "",
+    ])
+    for recommendation in recommendations:
+        lines.append(f"- {recommendation}")
+
+    lines.extend(
+        [
+            "",
+            "### By service",
+            "",
+            f"| Service | {' | '.join(visible_statuses)} | Changed |",
+            f"| --- | {' | '.join(['---:'] * len(visible_statuses))} | ---: |",
+        ]
+    )
     for service, items in service_results.items():
-        failures = sum(result.dry_run and item.action is not None for item in items)
+        pending_items = sum(result.dry_run and item.action is not None for item in items)
+        compliant_items = sum(item.action is None for item in items)
+        applied_items = sum(not result.dry_run and item.action is not None for item in items)
+        service_status_counts = {
+            "Compliant": compliant_items,
+            "Pending": pending_items,
+            "Applied": applied_items,
+        }
         changes = sum(item.action is not None for item in items)
-        lines.append(f"| <code>{escaped(service)}</code> | {len(items) - failures} | {failures} | {changes} |")
+        lines.append(
+            f"| <code>{escaped(service)}</code> | "
+            f"{' | '.join(str(service_status_counts[label]) for label in visible_statuses)} | {changes} |"
+        )
+    lines.append(
+        f"| **Total** | "
+        f"{' | '.join(str(status_counts[label]) for label in visible_statuses)} | "
+        f"{len(result.changed_files)} |"
+    )
 
     lines.extend(
         [
@@ -222,17 +370,15 @@ def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
         ]
     )
     for item in result.file_results:
-        failed_item = result.dry_run and item.action is not None
-        status = "Failure" if failed_item else "Success"
         if item.action is None:
-            detail = "Already compliant"
+            status = "Compliant"
         elif result.dry_run:
-            detail = f"Would be {item.action}"
+            status = "Pending"
         else:
-            detail = item.action.capitalize()
+            status = "Applied"
         lines.append(
             f"| {status} | <code>{escaped(item.path)}</code> | "
-            f"<code>{escaped(item.service)}</code> | {detail} |"
+            f"<code>{escaped(item.service)}</code> | {action_label(item.action)} |"
         )
 
     try:
