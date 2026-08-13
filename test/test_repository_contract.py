@@ -86,18 +86,20 @@ def test_universal_marketplace_publication_contract():
     assert "source_branch" not in marketplace
     assert marketplace["target_branch"] == "main"
     assert marketplace["include_dependabot_config"] is True
-    assert marketplace["include_github_metadata"] is False
+    assert "include_github_metadata" not in marketplace
     assert {
         ".github/dependabot.yml",
         "action.yml",
         "src",
-        "pyproject.toml",
         "README.md",
         "LICENSE",
         "NOTICE",
     } <= set(marketplace["required_paths"])
     assert ".gitignore" not in marketplace["allowlist_paths"]
     assert "test/**" not in marketplace["allowlist_paths"]
+    assert "pyproject.toml" not in marketplace["allowlist_paths"]
+    assert "scripts/" not in marketplace["allowlist_paths"]
+    assert {"pyproject.toml", "scripts/", "test/"} <= set(marketplace["blocked_paths"])
     assert config["general"] == {
         "action_test": {"python_versions": ["3.10", "3.11", "3.12"]}
     }
