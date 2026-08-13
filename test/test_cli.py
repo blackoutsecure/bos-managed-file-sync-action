@@ -350,6 +350,30 @@ def test_github_summary_omits_absent_states(repo, monkeypatch):
     assert "| Created |" not in summary
 
 
+def test_github_summary_distinguishes_disabled_services_from_compliance(repo, monkeypatch):
+    summary_file = repo.root / "gh_summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_file))
+    repo.write_config(
+        {
+            "use_marketplace_config": False,
+            "services": ["common"],
+            "disabled_services": ["common"],
+        }
+    )
+
+    assert main(["apply", "--root", str(repo.root)]) == EXIT_OK
+
+    summary = summary_file.read_text(encoding="utf-8")
+    assert "## Managed file sync: filtered" in summary
+    assert "No active managed files were evaluated; configured services were excluded or disabled." in summary
+    assert "### Service selection" in summary
+    assert "| Requested | <code>common</code> |" in summary
+    assert "| Resolved | <code>(none)</code> |" in summary
+    assert "| Disabled | <code>common</code> |" in summary
+    assert "| Compliant |" not in summary
+    assert "### Action breakdown" not in summary
+
+
 def test_github_summary_includes_config_details(repo, monkeypatch):
     summary_file = repo.root / "gh_summary.md"
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_file))
@@ -372,8 +396,9 @@ def test_github_summary_includes_config_details(repo, monkeypatch):
     assert main(["apply", "--root", str(repo.root), "--dry-run"]) == EXIT_OK
 
     summary = summary_file.read_text(encoding="utf-8")
-    assert "| Excluded services | <code>markdownlint</code> |" in summary
-    assert "| Disabled services | <code>dependabot_actions</code> |" in summary
+    assert "### Service selection" in summary
+    assert "| Excluded | <code>markdownlint</code> |" in summary
+    assert "| Disabled | <code>dependabot_actions</code> |" in summary
     assert "| Allowlist paths | <code>action.yml, src</code> |" in summary
     assert "| Blocked paths | <code>.github/workflows/, test/</code> |" in summary
     assert "| Required paths | <code>action.yml, src</code> |" in summary
