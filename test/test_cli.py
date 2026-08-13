@@ -420,6 +420,9 @@ def test_github_summary_includes_config_details(repo, monkeypatch):
     assert "### Full config review" in summary
     assert "<code>marketplace.allowlist_paths</code> | <code>action.yml, src</code> |" in summary
     assert "<code>security.enable_python_lint</code> | <code>True</code> |" in summary
+    assert "<code>take_over_managed_files</code> | <code>False</code> |" in summary
+    assert "### Block policy" in summary
+    assert "| <code>common</code> | <code>.gitignore</code> | <code>block</code> |" in summary
 
 
 def test_global_config_is_loaded_automatically(repo):

@@ -243,7 +243,7 @@ The config is merged in cascade order:
 
 1. **Tier 1: Marketplace config** (built-in, default ON)  
    Shipped with the action: best-practice services (`common`, `lf_line_endings`,
-  `markdownlint`, `dependabot_actions`, `editorconfig`) and a managed note.
+  `markdownlint`, `dependabot_actions`, `dependabot_pip`, `editorconfig`) and a managed note.
   Explicitly enable or disable it with
    `use_marketplace_config: true|false` in any tier above it. Typically disabled
    only for advanced customization.
@@ -519,11 +519,12 @@ example `>>> managed-file-sync:common >>>` and
 | `common` | block | `.gitignore` |
 | `lf_line_endings` | block | `.gitattributes` |
 | `dependabot_actions` | block | `.github/dependabot.yml` |
+| `dependabot_pip` | block | `.github/dependabot.yml` |
 | `editorconfig` | block | `.editorconfig` |
 | `shellcheck` | block | `.shellcheckrc` |
 | `prettier` | block + init | `.prettierignore`, `.prettierrc.json` |
 | `markdownlint` | file | `.markdownlint.json` |
-| `baseline` | bundle | `common`, `lf_line_endings`, `editorconfig`, `markdownlint`, `dependabot_actions` |
+| `baseline` | bundle | `common`, `lf_line_endings`, `editorconfig`, `markdownlint`, `dependabot_actions`, `dependabot_pip` |
 | `quality_baseline` | bundle | `baseline`, `shellcheck`, `prettier` |
 
 The `prettier` service intentionally uses two modes: `.prettierignore`
@@ -615,11 +616,20 @@ dist/
   where the block ends.
 - Markdown, HTML, and XML use wrapping comments
   (`<!-- >>> managed-file-sync:docs >>> -->`).
-- Blocks belonging to another namespace are never touched, so this action can
-  coexist with other file-syncing tools in the same file.
+- Blocks belonging to another namespace are never touched by default. If
+  `take_over_managed_files` is `true`, competing blocks for the same service
+  are removed before the configured block is written; unrelated content and
+  blocks for other services are preserved.
 - Set `managed_note` to stamp a provenance line under each start marker (and as
   a header on whole-file / init targets). Formats without comment syntax, such
   as JSON, are skipped automatically.
+
+| Existing block state | `take_over_managed_files: false` | `take_over_managed_files: true` |
+| --- | --- | --- |
+| Configured namespace exists | Update it in place. | Update it in place. |
+| Different namespace exists | Fail safely; no duplicate is written. | Remove the competing block and write the configured block. |
+| Multiple namespaces exist | Fail safely; ownership is ambiguous. | Remove all competing blocks for that service, then write the configured block. |
+| No block exists | Append the configured block. | Append the configured block. |
 
 ## 📝 Config schema
 
@@ -667,6 +677,7 @@ configs:
 | `variables` | object | Values for `{{token}}` placeholders in service content. |
 | `marker_namespace` | string | Marker namespace for managed blocks. Uses letters, numbers, `.`, `_`, or `-`; default `managed-file-sync`. |
 | `managed_note` | string or array | Provenance note written into managed blocks and file headers. Off by default. |
+| `take_over_managed_files` | boolean | Default `false`. When `true`, removes competing managed blocks for the same service before writing the configured block. When `false`, the run fails instead. |
 
 Built-in variables: `{{year}}`, `{{owner}}`, `{{repo}}`, and `{{repository}}`
 (from `GITHUB_REPOSITORY`).
@@ -747,6 +758,49 @@ Add a `service_definitions` entry:
 | `files[].scaffold` | Block mode only: root structure written once when the file is created. |
 | `files[].content_file` | Template file source for service definitions, resolved from `managed_files_path` (default `.github/managed-files`). |
 | `files[].comment_prefix` | Override marker comment syntax. Use `open\|close` for wrapping styles. |
+| `files[].marker_namespace` | Optional marker namespace for this block. Existing blocks must use the configured namespace; competing namespaces fail safely instead of creating a duplicate. |
+
+When taking over an existing block from another manager, keep the service name
+and set `files[].marker_namespace` to the existing namespace. The action then
+updates that block in place instead of appending a second block:
+
+```json
+{
+  "managed_file_sync": {
+    "services": ["dependabot_actions"],
+    "service_definitions": {
+      "dependabot_actions": {
+        "mode": "block",
+        "files": [
+          {
+            "path": ".github/dependabot.yml",
+            "marker_namespace": "bos-automation-hub",
+            "content_lines": [
+              "  - package-ecosystem: github-actions",
+              "    directory: \"/\""
+            ]
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+Use this during an ownership migration. Keep takeover disabled by default and
+enable it only for an intentional handoff:
+
+```json
+{
+  "managed_file_sync": {
+    "take_over_managed_files": true
+  }
+}
+```
+
+The action removes only competing blocks for the same service and preserves the
+rest of the file. Do not configure two services with the same service name and
+namespace for one file.
 
 ### Managed files base path and service paths
 

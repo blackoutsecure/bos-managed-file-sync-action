@@ -296,6 +296,15 @@ def marker_namespace(section: dict[str, Any]) -> str:
     )
 
 
+def take_over_managed_files(section: dict[str, Any]) -> bool:
+    """Whether block sync may remove competing managed blocks."""
+    return _bool_field(
+        section.get("take_over_managed_files"),
+        "take_over_managed_files",
+        False,
+    )
+
+
 def sync_direction(section: dict[str, Any]) -> str:
     """Return the supported one-way sync direction."""
     direction = section.get("direction", DEFAULT_SYNC_DIRECTION)

@@ -23,6 +23,87 @@ def test_block_service_creates_file(repo):
     assert "node_modules/" in repo.read(".gitignore")
 
 
+def test_block_service_can_adopt_existing_marker_namespace(repo):
+    repo.write(
+        ".github/dependabot.yml",
+        "version: 2\nupdates:\n\n"
+        "# >>> bos-automation-hub:dependabot_actions >>>\n"
+        "  - package-ecosystem: github-actions\n"
+        "# <<< bos-automation-hub:dependabot_actions <<<\n",
+    )
+    adopted = parse_service(
+        "dependabot_actions",
+        {
+            "mode": "block",
+            "files": [
+                {
+                    "path": ".github/dependabot.yml",
+                    "content": "  - package-ecosystem: github-actions\n    directory: /",
+                    "marker_namespace": "bos-automation-hub",
+                }
+            ],
+        },
+    )
+
+    SyncEngine(repo.root).sync([adopted])
+
+    dependabot = repo.read(".github/dependabot.yml")
+    assert dependabot.count("dependabot_actions") == 2
+    assert "# >>> managed-file-sync:dependabot_actions >>>" not in dependabot
+    assert "directory: /" in dependabot
+
+
+def test_block_service_rejects_unconfigured_existing_namespace(repo):
+    repo.write(
+        ".gitattributes",
+        "# >>> bos-automation-hub:line_endings >>>\nold\n"
+        "# <<< bos-automation-hub:line_endings <<<\n",
+    )
+    adopted = parse_service(
+        "line_endings",
+        {
+            "mode": "block",
+            "files": [{"path": ".gitattributes", "content": "new"}],
+        },
+    )
+
+    with pytest.raises(ConfigError, match="unmanaged marker namespace"):
+        SyncEngine(repo.root).sync([adopted])
+
+    assert "# >>> bos-automation-hub:line_endings >>>" in repo.read(".gitattributes")
+
+
+def test_block_service_takes_over_existing_namespace_when_enabled(repo):
+    repo.write(
+        "settings.ini",
+        "top=true\n# >>> first:settings >>>\nold\n# <<< first:settings <<<\nbottom=true\n",
+    )
+    settings = parse_service(
+        "settings",
+        {"mode": "block", "files": [{"path": "settings.ini", "content": "new"}]},
+    )
+
+    SyncEngine(repo.root, take_over_managed_files=True).sync([settings])
+
+    result = repo.read("settings.ini")
+    assert "first:settings" not in result
+    assert "managed-file-sync:settings" in result
+    assert "top=true\n" in result
+    assert "bottom=true\n" in result
+
+
+def test_block_service_rejects_ambiguous_existing_namespaces(repo):
+    repo.write(
+        "settings.ini",
+        "# >>> first:settings >>>\na\n# <<< first:settings <<<\n"
+        "# >>> second:settings >>>\nb\n# <<< second:settings <<<\n",
+    )
+    settings = service("settings", "block", "settings.ini", "new")
+
+    with pytest.raises(ConfigError, match="unmanaged marker namespace"):
+        SyncEngine(repo.root).sync([settings])
+
+
 def test_second_run_is_a_no_op(repo):
     svc = service("common", "block", ".gitignore", "node_modules/")
     SyncEngine(repo.root).sync([svc])

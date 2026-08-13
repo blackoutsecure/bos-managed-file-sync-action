@@ -108,6 +108,26 @@ def _is_marker_line(line: str, marker: str) -> bool:
     return line.rstrip("\r\n").strip() == marker.strip()
 
 
+def find_marker_namespaces(existing: str, service: str) -> set[str]:
+    """Find namespaces already used by complete markers for ``service``."""
+    identifier = re.escape(service)
+    starts = set(
+        re.findall(
+            rf">>>\s+([A-Za-z0-9_.-]+):{identifier}\s+>>>\s*(?:-->)?\s*$",
+            existing,
+            re.MULTILINE,
+        )
+    )
+    ends = set(
+        re.findall(
+            rf"<<<\s+([A-Za-z0-9_.-]+):{identifier}\s+<<<\s*(?:-->)?\s*$",
+            existing,
+            re.MULTILINE,
+        )
+    )
+    return starts & ends
+
+
 def render_block(
     service: str,
     content: str,
@@ -195,6 +215,32 @@ def apply_block(
     replacement = _use_line_ending(block, line_ending)
     replacement += _line_ending(lines[end_index])
     return existing[:start_offset] + replacement + existing[end_offset:]
+
+
+def remove_block(existing: str, service: str, namespace: str, prefix: str) -> str:
+    """Remove one complete managed block while preserving surrounding text."""
+    lines = existing.splitlines(keepends=True)
+    start_marker, end_marker = marker_lines(service, prefix, namespace)
+    start_indices = [
+        index for index, line in enumerate(lines) if _is_marker_line(line, start_marker)
+    ]
+    end_indices = [
+        index for index, line in enumerate(lines) if _is_marker_line(line, end_marker)
+    ]
+    if len(start_indices) != 1 or len(end_indices) != 1:
+        raise MarkerError(
+            f"managed block for service '{service}' must contain exactly one start marker "
+            "and one end marker"
+        )
+    start_index = start_indices[0]
+    end_index = end_indices[0]
+    if end_index < start_index:
+        raise MarkerError(
+            f"managed block for service '{service}' has its end marker before its start marker"
+        )
+    start_offset = sum(len(line) for line in lines[:start_index])
+    end_offset = start_offset + sum(len(line) for line in lines[start_index : end_index + 1])
+    return existing[:start_offset] + existing[end_offset:]
 
 
 def _line_ending(line: str) -> str:

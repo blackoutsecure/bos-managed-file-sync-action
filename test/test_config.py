@@ -154,6 +154,13 @@ def test_marker_namespace_defaults_and_overrides():
     assert marker_namespace({"marker_namespace": "bos-automation-hub"}) == "bos-automation-hub"
 
 
+def test_take_over_managed_files_defaults_off_and_can_be_enabled():
+    from sync_kit.config import take_over_managed_files
+
+    assert take_over_managed_files({}) is False
+    assert take_over_managed_files({"take_over_managed_files": True}) is True
+
+
 def test_sync_direction_defaults_and_accepts_one_way_mode():
     assert sync_direction({}) == "source-to-destination"
     assert sync_direction({"direction": "source-to-destination"}) == "source-to-destination"

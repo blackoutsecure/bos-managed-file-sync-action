@@ -243,6 +243,23 @@ def test_per_file_mode_overrides_service_mode():
     assert [f.mode for f in service.files] == ["block", "init"]
 
 
+def test_per_file_marker_namespace_overrides_global_namespace():
+    service = parse_service(
+        "dependabot_actions",
+        {
+            "files": [
+                {
+                    "path": ".github/dependabot.yml",
+                    "content": "  - package-ecosystem: github-actions",
+                    "marker_namespace": "bos-automation-hub",
+                }
+            ]
+        },
+    )
+
+    assert service.files[0].marker_namespace == "bos-automation-hub"
+
+
 def test_resolve_services_from_list(repo):
     catalog = load_catalog(repo.root)
     services = resolve_services(catalog, {"services": ["common", "editorconfig"]})
