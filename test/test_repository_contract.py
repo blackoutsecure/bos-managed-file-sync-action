@@ -76,16 +76,25 @@ def test_action_metadata_matches_package_metadata():
     assert _yaml_scalar(action, "icon", indent=2)
 
 
-def test_managed_file_config_disables_duplicate_self_management():
+def test_managed_file_config_uses_marketplace_defaults():
     repo_path = GITHUB / "bos-universal-config.json"
     section = load_repo_config(config_file=repo_path)
     registry = load_catalog(ROOT, section, section_is_merged=True)
     resolved = resolve_services(registry, section)
 
-    assert section == {
-        "use_marketplace_config": False,
-    }
-    assert resolved == []
+    assert section["use_marketplace_config"] is True
+    assert [service.name for service in resolved] == [
+        "common",
+        "lf_line_endings",
+        "markdownlint",
+        "dependabot_actions",
+        "dotfiles",
+    ]
+
+
+def test_marketplace_profiles_are_opt_in():
+    config = load_repo_config(config_file=GITHUB / "bos-universal-config.json")
+    assert "quality_baseline" not in config["services"]
 
 
 def test_universal_marketplace_publication_contract():
@@ -111,9 +120,6 @@ def test_universal_marketplace_publication_contract():
     assert {"pyproject.toml", "scripts/", "test/"} <= set(marketplace["blocked_paths"])
     assert config["general"] == {
         "action_test": {"python_versions": ["3.10", "3.11", "3.12"]}
-    }
-    assert config["managed_file_sync"] == {
-        "use_marketplace_config": False,
     }
 
 

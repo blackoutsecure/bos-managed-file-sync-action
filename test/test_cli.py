@@ -40,6 +40,34 @@ def test_services_flag_without_config(repo):
 
 
 def test_managed_file_sync_workflow_service_updates_the_invoking_workflow(repo):
+    repo.write(
+        ".github/blackout-secure-managed-file-sync-global-config.json",
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "service_definitions": {
+                        "managed_file_sync_workflow": {
+                            "mode": "update",
+                            "files": [
+                                {
+                                    "path": ".github/workflows/managed-file-sync.yml",
+                                    "content_lines": [
+                                        "name: Managed file sync",
+                                        "",
+                                        "jobs:",
+                                        "  sync:",
+                                        "    runs-on: {{SELECTED_RUNNER}}",
+                                        "    steps:",
+                                        "      - uses: blackoutsecure/bos-managed-file-sync-action@v1",
+                                    ],
+                                }
+                            ],
+                        }
+                    }
+                }
+            }
+        ),
+    )
     repo.write(".github/workflows/managed-file-sync.yml", "name: local workflow\n")
     assert (
         main(
@@ -214,12 +242,12 @@ def test_conflicting_services_return_config_exit_code(repo):
 def test_readme_minimal_config_is_valid(repo):
     """The minimal config documented in the README must resolve against marketplace defaults."""
     section = {
-        "services": ["common", "lf_line_endings", "dotfiles", "codeowners"],
-        "variables": {"owner": "Example Org", "codeowner": "@example-org/platform-team"},
+        "services": ["common", "lf_line_endings", "dotfiles"],
+        "variables": {"owner": "Example Org"},
     }
     repo.write_config(section)
     catalog = load_catalog(repo.root, section)
-    assert len(resolve_services(catalog, section)) == 4
+    assert len(resolve_services(catalog, section)) == 3
     assert main(["apply", "--root", str(repo.root)]) == EXIT_OK
 
 

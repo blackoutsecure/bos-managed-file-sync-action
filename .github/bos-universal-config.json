@@ -3,9 +3,6 @@
     "enable_python_lint": true,
     "python_version": "3.12"
   },
-  "managed_file_sync": {
-    "use_marketplace_config": false
-  },
   "marketplace": {
     "enabled": true,
     "allowlist_paths": [

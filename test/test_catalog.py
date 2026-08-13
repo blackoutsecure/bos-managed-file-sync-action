@@ -14,13 +14,9 @@ DEFAULT_SERVICES = (
     "lf_line_endings",
     "dependabot_actions",
     "dotfiles",
-    "codeowners",
-    "license",
-    "notice_apache2",
     "shellcheck",
     "prettier",
     "markdownlint",
-    "managed_file_sync_workflow",
 )
 
 
@@ -29,14 +25,17 @@ def test_default_catalog_contains_expected_service(repo, name):
     assert name in load_catalog(repo.root)
 
 
-def test_managed_file_sync_workflow_service_is_opt_in_and_renders_runner(repo):
+def test_quality_baseline_bundle_adds_optional_quality_services(repo):
     catalog = load_catalog(repo.root)
-    assert "managed_file_sync_workflow" not in resolve_services(catalog, {"services": ["baseline"]})
-
-    workflow = resolve_services(catalog, {"services": ["managed_file_sync_workflow"]})[0]
-    assert workflow.files[0].path == ".github/workflows/managed-file-sync.yml"
-    assert workflow.files[0].mode == "update"
-    assert "runs-on: {{SELECTED_RUNNER}}" in workflow.files[0].content
+    assert [service.name for service in resolve_services(catalog, {"services": ["quality_baseline"]})] == [
+        "common",
+        "lf_line_endings",
+        "dotfiles",
+        "markdownlint",
+        "dependabot_actions",
+        "shellcheck",
+        "prettier",
+    ]
 
 
 def test_repo_definitions_override_catalog(repo):

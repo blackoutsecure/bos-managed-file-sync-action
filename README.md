@@ -405,6 +405,27 @@ Resulting enabled services:
 - Global exclusion removes `markdownlint`
 - Final set: `common`, `lf_line_endings`, `dotfiles`, `prettier`
 
+For the standard baseline plus quality policy, prefer the profile bundle:
+
+```json
+{
+  "managed_file_sync": {
+    "services": ["quality_baseline"]
+  }
+}
+```
+
+To keep inherited defaults but exclude one service, use an exclusion rather
+than replacing the entire service list:
+
+```json
+{
+  "managed_file_sync": {
+    "exclude_services": ["markdownlint"]
+  }
+}
+```
+
 If the repo wants to replace inherited services instead of appending, set:
 
 ```json
@@ -445,14 +466,20 @@ global or repo config.
 | `lf_line_endings` | block | `.gitattributes` |
 | `dependabot_actions` | block | `.github/dependabot.yml` |
 | `dotfiles` | init | `.editorconfig` |
-| `codeowners` | init | `.github/CODEOWNERS` |
-| `license` | init | `LICENSE` |
-| `notice_apache2` | init | `NOTICE` |
 | `shellcheck` | block | `.shellcheckrc` |
 | `prettier` | block + init | `.prettierignore`, `.prettierrc.json` |
 | `markdownlint` | file | `.markdownlint.json` |
-| `managed_file_sync_workflow` | file | `.github/workflows/managed-file-sync.yml` |
 | `baseline` | bundle | `common`, `lf_line_endings`, `dotfiles`, `markdownlint`, `dependabot_actions` |
+| `quality_baseline` | bundle | `baseline`, `shellcheck`, `prettier` |
+
+The Marketplace registry intentionally enables only the conservative
+`baseline` services by default. Additional services and bundles are available
+without being enabled automatically:
+
+- `quality_baseline` adds ShellCheck and Prettier policy.
+Community-health files, release metadata, and application configuration are
+not Marketplace defaults. They are organization- or project-specific and
+belong in global or repository `service_definitions`.
 
 List the resolved service registry at any time:
 
@@ -460,26 +487,13 @@ List the resolved service registry at any time:
 bos-sync services
 ```
 
-### Managing the sync workflow
+### Organization-owned sync workflow
 
-Enable `managed_file_sync_workflow` to have the service manage the workflow
-that invokes this action. It is deliberately opt-in and is not part of
-`baseline`, because it owns a workflow file and its trigger/commit policy.
-
-```json
-{
-  "managed_file_sync": {
-    "services": ["managed_file_sync_workflow"]
-  }
-}
-```
-
-The service updates an existing `.github/workflows/managed-file-sync.yml` but
-does not create it. The managed workflow runs a dry-run drift check on pull
-requests; scheduled runs and `workflow_dispatch` in `commit` mode apply and
-commit updates. A manual `check` run only reports drift. Override this service
-in global or repo config when your organization needs different triggers,
-permissions, action pins, or commit behavior.
+The workflow that invokes this action is intentionally not part of the
+Marketplace registry. Its triggers, permissions, and commit policy are
+organization-specific, so place its `managed_file_sync_workflow` definition in
+your automation-hub global config and enable it there. This keeps Marketplace
+consumers from receiving an opinionated workflow they did not request.
 
 ## 🧩 Managed blocks
 
@@ -524,10 +538,9 @@ A minimal repo config:
 ```json
 {
   "managed_file_sync": {
-    "services": ["common", "lf_line_endings", "dotfiles", "codeowners"],
+    "services": ["common", "lf_line_endings", "dotfiles"],
     "variables": {
-      "owner": "Example Org",
-      "codeowner": "@example-org/platform-team"
+      "owner": "Example Org"
     }
   }
 }
@@ -540,7 +553,7 @@ configs:
 {
   "managed_file_sync": {
     "services": { "common": true, "prettier": false },
-    "disabled_services": ["license"]
+    "disabled_services": ["markdownlint"]
   }
 }
 ```
