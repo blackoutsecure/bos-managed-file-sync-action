@@ -13,3 +13,11 @@ shell=bash
 # SC1091: sourced relative helper files are resolved at runtime.
 disable=SC2016,SC1091
 external-sources=true
+
+# >>> managed-file-sync:shellcheck >>>
+# Managed by Blackout Secure. Best practices applied via marketplace config, customized in .github/blackout-secure-managed-file-sync-global-config.json and .github/bos-universal-config.json.
+shell=bash
+external-sources=true
+enable=quote-safe-variables
+enable=require-variable-braces
+# <<< managed-file-sync:shellcheck <<<

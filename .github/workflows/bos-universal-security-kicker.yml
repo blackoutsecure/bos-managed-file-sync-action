@@ -23,7 +23,7 @@ permissions:
   contents: read
 
 jobs:
-  parse-config:
+  parse_config:
     name: Parse universal config
     # Resolve runner from org-shared `vars.DEFAULT_RUNNER` when set,
     # supporting both bare label and JSON-array formats. Fallback to
@@ -31,12 +31,12 @@ jobs:
     runs-on: ${{ fromJSON(startsWith(vars.DEFAULT_RUNNER || 'ubuntu-latest', '[') && (vars.DEFAULT_RUNNER || 'ubuntu-latest') || format('"{0}"', vars.DEFAULT_RUNNER || 'ubuntu-latest')) }}
     timeout-minutes: 2
     outputs:
-      target_ref: ${{ steps.target-ref.outputs.ref }}
+      target_ref: ${{ steps.target_ref.outputs.ref }}
     steps:
       # `uses:` refs cannot be dynamic, so resolve which hub branch this
       # run targets here and pick the matching static-ref job below.
       - name: Resolve target hub ref
-        id: target-ref
+        id: target_ref
         env:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
@@ -53,8 +53,8 @@ jobs:
 
   security-dev:
     name: security (dev)
-    needs: parse-config
-    if: needs.parse-config.outputs.target_ref == 'dev'
+    needs: parse_config
+    if: needs.parse_config.outputs.target_ref == 'dev'
     permissions:
       contents: read
       security-events: write
@@ -67,8 +67,8 @@ jobs:
 
   security-main:
     name: security (main)
-    needs: parse-config
-    if: needs.parse-config.outputs.target_ref == 'main'
+    needs: parse_config
+    if: needs.parse_config.outputs.target_ref == 'main'
     permissions:
       contents: read
       security-events: write
