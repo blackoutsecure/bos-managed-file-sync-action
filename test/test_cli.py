@@ -311,12 +311,76 @@ def test_github_summary_reports_file_and_service_results(repo, monkeypatch):
     assert main(["apply", "--root", str(repo.root), "--dry-run"]) == EXIT_OK
 
     summary = summary_file.read_text(encoding="utf-8")
-    assert "## Managed file sync: failure" in summary
+    assert "## Managed file sync: changes pending" in summary
     assert "| 1 | 1 | 2 | 1 |" in summary
+    assert "| Action | Count |" in summary
+    assert "| Already compliant | 1 |" in summary
+    assert "| Created | 1 |" in summary
+    assert "| Compliant | Pending | Evaluated files | Changed files |" in summary
     assert "<code>clean</code> | 1 | 0 | 0" in summary
     assert "<code>drifted</code> | 0 | 1 | 1" in summary
-    assert "| Success | <code>clean.txt</code> | <code>clean</code> | Already compliant |" in summary
-    assert "| Failure | <code>drifted.txt</code> | <code>drifted</code> | Would be created |" in summary
+    assert "| **Total** | 1 | 1 | 1 |" in summary
+    assert "| Compliant | <code>clean.txt</code> | <code>clean</code> | Already compliant |" in summary
+    assert "| Pending | <code>drifted.txt</code> | <code>drifted</code> | Created |" in summary
+    assert "### Review recommendations" in summary
+    assert "### Full config review" in summary
+
+
+def test_github_summary_omits_absent_states(repo, monkeypatch):
+    summary_file = repo.root / "gh_summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_file))
+    repo.write_config(
+        {
+            "use_marketplace_config": False,
+            "services": ["clean"],
+            "service_definitions": {
+                "clean": {"mode": "file", "files": [{"path": "clean.txt", "content": "ok"}]},
+            },
+        }
+    )
+    repo.write("clean.txt", "ok\n")
+
+    assert main(["apply", "--root", str(repo.root)]) == EXIT_OK
+
+    summary = summary_file.read_text(encoding="utf-8")
+    assert "| Compliant | Evaluated files | Changed files |" in summary
+    assert "| Pending |" not in summary
+    assert "| Applied |" not in summary
+    assert "| Already compliant | 1 |" in summary
+    assert "| Created |" not in summary
+
+
+def test_github_summary_includes_config_details(repo, monkeypatch):
+    summary_file = repo.root / "gh_summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_file))
+    repo.write_config(
+        {
+            "use_marketplace_config": True,
+            "security": {"enable_python_lint": True, "python_version": "3.12"},
+            "services": ["common", "dotfiles"],
+            "exclude_services": ["markdownlint"],
+            "disabled_services": ["dependabot_actions"],
+            "marketplace": {
+                "allowlist_paths": ["action.yml", "src"],
+                "blocked_paths": [".github/workflows/", "test/"],
+                "required_paths": ["action.yml", "src"],
+                "repo_metadata": {"enable": True, "homepage": "https://example.com"},
+            },
+        }
+    )
+
+    assert main(["apply", "--root", str(repo.root), "--dry-run"]) == EXIT_OK
+
+    summary = summary_file.read_text(encoding="utf-8")
+    assert "| Excluded services | <code>markdownlint</code> |" in summary
+    assert "| Disabled services | <code>dependabot_actions</code> |" in summary
+    assert "| Allowlist paths | <code>action.yml, src</code> |" in summary
+    assert "| Blocked paths | <code>.github/workflows/, test/</code> |" in summary
+    assert "| Required paths | <code>action.yml, src</code> |" in summary
+    assert "| Repo metadata | <code>enabled</code> |" in summary
+    assert "### Full config review" in summary
+    assert "<code>marketplace.allowlist_paths</code> | <code>action.yml, src</code> |" in summary
+    assert "<code>security.enable_python_lint</code> | <code>True</code> |" in summary
 
 
 def test_global_config_is_loaded_automatically(repo):
