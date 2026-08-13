@@ -258,8 +258,8 @@
         ]
       },
       "managed_file_sync_workflow": {
-        "mode": "file",
-        "description": "Opt-in workflow that runs and commits managed-file synchronization.",
+        "mode": "update",
+        "description": "Opt-in workflow that updates existing managed-file synchronization workflows.",
         "files": [
           {
             "path": ".github/workflows/managed-file-sync.yml",

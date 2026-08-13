@@ -27,6 +27,7 @@ from .paths import normalize_relative_path, resolve_inside, resolve_repo_root
 # Mode-specific wording so `head` on a managed file says whether it is safe to edit.
 NOTE_WORDING = {
     "file": "{note}\nDo not edit — every sync run overwrites this file.",
+    "update": "{note}\nDo not edit — every sync run overwrites this file when it exists.",
     "init": (
         "{note}\nStarter template, safe to customize. This file is only ever "
         "created, never overwritten."
@@ -265,9 +266,12 @@ class SyncEngine:
         if managed.mode == "init" and exists:
             return None
 
+        if managed.mode == "update" and not exists:
+            return None
+
         content = render(managed.content, self.variables)
 
-        if managed.mode in ("init", "file"):
+        if managed.mode in ("init", "file", "update"):
             desired = _with_final_newline(self._with_header(managed, content))
         else:
             base = current if exists else self._scaffold(managed)

@@ -17,7 +17,7 @@ from .config import find_config, load_repo_config, marker_identifier
 from .errors import ConfigError
 from .paths import normalize_relative_path, read_utf8_file_inside, resolve_inside
 
-VALID_MODES = ("block", "file", "init", "absent")
+VALID_MODES = ("block", "file", "init", "update", "absent")
 
 MAX_BUNDLE_DEPTH = 10
 
