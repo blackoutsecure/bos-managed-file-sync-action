@@ -162,6 +162,29 @@ def _load_config_section(config_file: Path | None) -> dict[str, Any]:
     return section
 
 
+def load_inline_config(raw: str | dict[str, Any] | None) -> dict[str, Any]:
+    """Parse an inline JSON object and return the managed_file_sync section."""
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        data = raw
+    else:
+        if not isinstance(raw, str):
+            raise ConfigError("inline config must be a JSON string or object")
+        if not raw.strip():
+            return {}
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ConfigError(f"invalid inline config JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ConfigError("inline config JSON must decode to an object")
+    section = data.get(CONFIG_SECTION, data)
+    if not isinstance(section, dict):
+        raise ConfigError("'managed_file_sync' must be a JSON object in the inline config")
+    return section
+
+
 def _load_bundled_config(path: str, *, label: str) -> dict[str, Any]:
     """Load a bundled config section from this package."""
     try:
@@ -221,20 +244,25 @@ def load_repo_config(
     config_file: Path | None = None,
     global_config_file: Path | None = None,
     use_marketplace: bool = True,
+    config_json: str | dict[str, Any] | None = None,
+    global_config_json: str | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Load and merge marketplace + global + repo config.
+    """Load and merge marketplace + global + repo + inline config.
 
     Cascade (lower tier wins for scalars, deep merge for objects):
         0. Locked marketplace config (always ON; non-overridable keys)
         1. Marketplace config (switchable built-in defaults)
         2. Global config (org/hub-level overrides)
         3. Repo config (repo-specific overrides)
+        4. Inline config JSON for each tier (highest-precedence override for workflow runs)
 
     Args:
         config_file: repo-specific config file path (optional).
         global_config_file: org/hub-level config file path (optional).
         use_marketplace: if True (default), merge marketplace config first.
             Can be disabled by passing False or set in any config via use_marketplace_config: false.
+        config_json: raw inline repo config JSON object or serialized object string.
+        global_config_json: raw inline global config JSON object or serialized object string.
 
     Returns:
         Merged ``managed_file_sync`` section from all applicable tiers, or {} if none provided.
@@ -243,10 +271,17 @@ def load_repo_config(
         ConfigError: on invalid config file.
     """
     global_section = _load_config_section(global_config_file)
+    global_inline_section = load_inline_config(global_config_json)
     repo_section = _load_config_section(config_file)
+    repo_inline_section = load_inline_config(config_json)
 
     marketplace_enabled = use_marketplace
-    for section in (global_section, repo_section):
+    for section in (
+        global_section,
+        global_inline_section,
+        repo_section,
+        repo_inline_section,
+    ):
         if "use_marketplace_config" not in section:
             continue
         configured = _bool_field(
@@ -268,7 +303,7 @@ def load_repo_config(
         ):
             merged = _merge_section(merged, marketplace_section)
 
-    for section in (global_section, repo_section):
+    for section in (global_section, global_inline_section, repo_section, repo_inline_section):
         if section:
             merged = _merge_section(merged, section)
 
