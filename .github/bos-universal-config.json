@@ -35,7 +35,7 @@
       "enable": true,
       "homepage": "https://github.com/marketplace/actions/blackout-secure-managed-file-sync",
       "generate_topics": true,
-      "topics_fallback": "github-actions managed-files repo-standardization drift-detection dotfiles codeowners dependabot editorconfig composite-action devops"
+      "topics_fallback": "github-actions managed-files repo-standardization drift-detection codeowners dependabot editorconfig composite-action devops"
     }
   },
   "general": {

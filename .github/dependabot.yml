@@ -15,34 +15,20 @@
 version: 2
 updates:
 
-# >>> bos-automation-hub:dependabot_actions >>>
-# Managed by https://github.com/blackoutsecure/bos-automation-hub — do not edit between markers.
+# >>> managed-file-sync:dependabot_actions >>>
+# Managed by Blackout Secure. Best practices applied via marketplace config, customized in .github/blackout-secure-managed-file-sync-global-config.json and .github/bos-universal-config.json.
   - package-ecosystem: github-actions
-    directory: /
-    target-branch: dev
+    directory: "/"
     schedule:
       interval: weekly
-      day: monday
-      time: "06:00"
-      timezone: "Etc/UTC"
-    open-pull-requests-limit: 5
     commit-message:
-      prefix: "ci"
-      include: scope
+      prefix: "chore(deps)"
     labels:
       - dependencies
-      - github-actions
-    groups:
-      docker-actions:
-        patterns:
-          - "docker/*"
-      github-actions:
-        patterns:
-          - "actions/*"
-# <<< bos-automation-hub:dependabot_actions <<<
+# <<< managed-file-sync:dependabot_actions <<<
 
-# >>> bos-automation-hub:dependabot_pip >>>
-# Managed by https://github.com/blackoutsecure/bos-automation-hub — do not edit between markers.
+# >>> managed-file-sync:dependabot_pip >>>
+# Managed by Blackout Secure. Best practices applied via marketplace config, customized in .github/blackout-secure-managed-file-sync-global-config.json and .github/bos-universal-config.json.
   - package-ecosystem: pip
     directory: /
     target-branch: dev
@@ -58,4 +44,4 @@ updates:
     labels:
       - dependencies
       - python
-# <<< bos-automation-hub:dependabot_pip <<<
+# <<< managed-file-sync:dependabot_pip <<<

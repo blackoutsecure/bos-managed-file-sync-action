@@ -17,6 +17,7 @@ DEFAULT_SERVICES = (
     "shellcheck",
     "prettier",
     "markdownlint",
+        "dependabot_pip",
 )
 
 
@@ -33,6 +34,7 @@ def test_quality_baseline_bundle_adds_optional_quality_services(repo):
         "editorconfig",
         "markdownlint",
         "dependabot_actions",
+        "dependabot_pip",
         "shellcheck",
         "prettier",
     ]
@@ -311,6 +313,7 @@ def test_bundle_expands_to_members(repo):
         "editorconfig",
         "markdownlint",
         "dependabot_actions",
+        "dependabot_pip",
     ]
 
 

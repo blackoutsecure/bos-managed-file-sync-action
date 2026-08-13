@@ -369,6 +369,7 @@ def test_repo_config_can_reenable_marketplace_disabled_by_global_config(repo):
         "lf_line_endings",
         "markdownlint",
         "dependabot_actions",
+        "dependabot_pip",
         "editorconfig",
         "prettier",
     ]
@@ -403,6 +404,7 @@ def test_repo_config_merges_with_marketplace(repo):
         "lf_line_endings",
         "markdownlint",
         "dependabot_actions",
+        "dependabot_pip",
         "editorconfig",
         "prettier",
     ]
@@ -470,6 +472,7 @@ def test_marketplace_global_and_repo_cascade(repo):
         "lf_line_endings",
         "markdownlint",
         "dependabot_actions",
+        "dependabot_pip",
         "editorconfig",
         "prettier",
     ]
