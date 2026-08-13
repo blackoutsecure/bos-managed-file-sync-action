@@ -16,10 +16,22 @@ the **destination**. `managed_file_sync.direction` defaults to
 `source-to-destination`, which is the only supported value. Reverse and
 bidirectional sync fail validation before any file is changed.
 
-Everything in one Marketplace install: canonical dotfiles, managed blocks
+Everything in one Marketplace install: canonical configuration files, managed blocks
 inside files you also hand-edit, init-if-missing scaffolding, dry-run
 previews, and a CI drift gate. Marketplace defaults are vendor neutral, and
 any repo or org can extend them with its own services — no fork required.
+
+## Start here
+
+| Goal | Go to |
+| --- | --- |
+| Install the action | [Quick start](#quick-start-) |
+| Check for drift in pull requests | [Drift check](#drift-check-on-pull-requests) |
+| Choose a release reference | [Version pinning](#version-pinning) |
+| Understand configuration inheritance | [Configuration layering](#-configuration-inheritance-and-layering) |
+| Define or override services | [Config schema](#-config-schema) |
+| Choose file behavior | [File modes](#file-modes) |
+| Run locally | [Local CLI usage](#-local-usage-cli) |
 
 ## ✨ Features
 
@@ -61,6 +73,20 @@ any repo or org can extend them with its own services — no fork required.
 - For **committing fixes**: `contents: write` (and `pull-requests: write` if
   you open a PR with the changes).
 
+## How it works
+
+1. The action loads marketplace, global, repo, and workflow configuration.
+2. It resolves the requested services after applying exclusions and disabled
+  service filters.
+3. It reconciles each managed destination according to its file mode.
+4. It writes outputs, diffs, and a GitHub Job Summary.
+
+| Run type | Writes files | Exit behavior | Best use |
+| --- | --- | --- | --- |
+| Apply | Yes, when changes are needed | `0` normally; `1` with `fail_on_drift` when drift exists; `2` on config error | Scheduled synchronization or a repair workflow. |
+| Dry run | No | `0` unless configuration fails | Preview changes in logs and the Job Summary. |
+| Drift gate | No | `1` when drift exists and `fail_on_drift` is enabled | Pull request validation. |
+
 ## Quick start 🚀
 
 Create `.github/bos-universal-config.json` in the destination repository:
@@ -69,7 +95,7 @@ Create `.github/bos-universal-config.json` in the destination repository:
 {
   "managed_file_sync": {
     "direction": "source-to-destination",
-    "services": ["common", "lf_line_endings", "dependabot_actions", "dotfiles"]
+    "services": ["common", "lf_line_endings", "dependabot_actions", "editorconfig"]
   }
 }
 ```
@@ -190,11 +216,19 @@ detected with `fail_on_drift: 'true'`, and `2` on a config error.
 ## Job summary
 
 When run in GitHub Actions, the action writes a Job Summary with the resolved
-configuration, success/failure totals, service-level counts, and a file-by-file
-result table. In a dry run, a file that would change is marked **Failure** so
-drift is immediately visible; files already in sync are marked **Success**. In
-apply mode, a successfully created, updated, or deleted file is marked
-**Success**.
+configuration, compliant/pending/applied totals, service-level counts, and a
+file-by-file result table. Disabled and excluded services are listed
+separately, so filtered services are not reported as compliant.
+
+| State | Meaning |
+| --- | --- |
+| `Compliant` | The managed file already matches the resolved service content. |
+| `Pending` | A dry run found a file that would be created, updated, or deleted. |
+| `Applied` | Apply mode created, updated, or deleted the file. |
+| `Excluded` | Service selection intentionally removed it with `exclude_services`. |
+| `Disabled` | Service selection filtered it with `disabled_services`. |
+
+States and action rows with no entries are omitted to keep the summary compact.
 
 ## 🏗️ Configuration inheritance and layering
 
@@ -209,7 +243,7 @@ The config is merged in cascade order:
 
 1. **Tier 1: Marketplace config** (built-in, default ON)  
    Shipped with the action: best-practice services (`common`, `lf_line_endings`,
-  `markdownlint`, `dependabot_actions`, `dotfiles`) and a managed note.
+  `markdownlint`, `dependabot_actions`, `editorconfig`) and a managed note.
   Explicitly enable or disable it with
    `use_marketplace_config: true|false` in any tier above it. Typically disabled
    only for advanced customization.
@@ -264,7 +298,7 @@ No configs needed; the marketplace defaults apply:
 ```
 
 Result: `common`, `lf_line_endings`, `markdownlint`, `dependabot_actions`,
-and `dotfiles` are synced.
+and `editorconfig` are synced.
 
 #### Example 2: Marketplace + Org config
 
@@ -274,7 +308,7 @@ Create `.github/blackout-secure-managed-file-sync-global-config.json`:
 {
   "managed_file_sync": {
     "direction": "source-to-destination",
-    "services": ["common", "lf_line_endings", "markdownlint", "dependabot_actions", "dotfiles"],
+    "services": ["common", "lf_line_endings", "markdownlint", "dependabot_actions", "editorconfig"],
     "variables": {
       "org_name": "my-org",
       "support_email": "platform-team@my-org.com",
@@ -291,7 +325,7 @@ Workflow:
 ```
 
 Result: marketplace config merged with org config (services append by default). All
-destination repos containing the hub-managed global config get `dotfiles` and
+destination repos containing the hub-managed global config get `editorconfig` and
 the org variables automatically.
 
 #### Example 3: Marketplace + Org + Repo config
@@ -301,7 +335,7 @@ Same as above, plus create `.github/bos-universal-config.json` in the repo:
 ```json
 {
   "managed_file_sync": {
-    "services": ["common", "lf_line_endings", "markdownlint", "dependabot_actions", "dotfiles", "prettier"],
+    "services": ["common", "lf_line_endings", "markdownlint", "dependabot_actions", "editorconfig", "prettier"],
     "variables": {
       "project_name": "my-typescript-project"
     }
@@ -362,7 +396,8 @@ inline service needs a `files` definition with canonical `content`,
 
 When a field is defined in multiple tiers:
 
-- **Services array**: appended by default (tier 0 + tier 1 + tier 2), with
+- **Services array**: appended by default across marketplace, global, and repo
+  tiers, with
   duplicates removed while preserving first-seen order.
   To replace inherited services instead, set `use_marketplace_services: false`
   in that tier, for example
@@ -370,9 +405,10 @@ When a field is defined in multiple tiers:
 - **Service exclusions**: use `exclude_services` (or `disabled_services`) to
   drop resolved services from the final set. This is how you remove a
   marketplace service for a specific global config or repo config.
-- **Variables object**: merged. Tier 2 adds to tier 0's variables.
-- **Marker namespace**: tier 2 replaces tier 0 (rare).
-- **Managed note**: tier 1 (org) often sets this; tier 2 can override.
+- **Variables object**: merged. Global values add to marketplace values, and
+  repo values can add or override both.
+- **Marker namespace**: a lower tier replaces a higher tier (rare).
+- **Managed note**: global config often sets this; repo config can override it.
 
 Concrete example (global exclusion + repo append):
 
@@ -381,7 +417,7 @@ Global config (`.github/blackout-secure-managed-file-sync-global-config.json`):
 ```json
 {
   "managed_file_sync": {
-    "services": ["dotfiles"],
+    "services": ["editorconfig"],
     "exclude_services": ["markdownlint"]
   }
 }
@@ -400,10 +436,10 @@ Repo config (`.github/bos-universal-config.json`):
 Resulting enabled services:
 
 - Marketplace defaults start as: `common`, `lf_line_endings`, `markdownlint`, `dependabot_actions`
-- Global appends: `dotfiles`
+- Global appends: `editorconfig`
 - Repo appends: `prettier`
 - Global exclusion removes `markdownlint`
-- Final set: `common`, `lf_line_endings`, `dotfiles`, `prettier`
+- Final set: `common`, `lf_line_endings`, `editorconfig`, `prettier`
 
 For the standard baseline plus quality policy, prefer the profile bundle:
 
@@ -460,17 +496,56 @@ Every service below ships with the action and can be overridden per repo. The
 registry is deliberately vendor neutral — org-specific services belong in your
 global or repo config.
 
+### File modes
+
+Each managed file uses one mode to define how the action reconciles the
+destination file. A service can set a default mode, and an individual entry in
+`files` can override it with its own `mode`.
+
+| Mode | Behavior | Existing destination | Missing destination | Typical use |
+| --- | --- | --- | --- | --- |
+| `block` | Updates only the managed marker block and preserves surrounding content. | Updates the block; preserves the rest of the file. | Creates the file with the managed block. | Shared config files that the repo also edits. |
+| `file` | Reconciles the entire file to the canonical content. | Overwrites the file. | Creates the file. | Fully managed canonical files. |
+| `init` | Installs starter content once and never overwrites it afterward. | Leaves the file unchanged. | Creates the file. | Defaults that repositories may customize. |
+| `update` | Reconciles only when the destination already exists. | Overwrites the file. | Skips the file; does not create it. | Existing workflows or files that must be opted into first. |
+| `absent` | Retires the file from the managed set. | Deletes the file. | No action. | Removing a file from a service while preserving the service definition. |
+
+For `block` mode, markers use the configured namespace and service name, for
+example `>>> managed-file-sync:common >>>` and
+`<<< managed-file-sync:common <<<`.
+
 | Service | Mode | Managed path(s) |
 | --- | --- | --- |
 | `common` | block | `.gitignore` |
 | `lf_line_endings` | block | `.gitattributes` |
 | `dependabot_actions` | block | `.github/dependabot.yml` |
-| `dotfiles` | init | `.editorconfig` |
+| `editorconfig` | block | `.editorconfig` |
 | `shellcheck` | block | `.shellcheckrc` |
 | `prettier` | block + init | `.prettierignore`, `.prettierrc.json` |
 | `markdownlint` | file | `.markdownlint.json` |
-| `baseline` | bundle | `common`, `lf_line_endings`, `dotfiles`, `markdownlint`, `dependabot_actions` |
+| `baseline` | bundle | `common`, `lf_line_endings`, `editorconfig`, `markdownlint`, `dependabot_actions` |
 | `quality_baseline` | bundle | `baseline`, `shellcheck`, `prettier` |
+
+The `prettier` service intentionally uses two modes: `.prettierignore`
+inherits the service-level `block` mode, while `.prettierrc.json` overrides it
+with `init`. Strict JSON cannot contain the comment markers required by a
+managed block, and `init` lets a repository customize its formatter config
+without the sync action overwriting it later.
+
+### EditorConfig vs. Prettier
+
+These services are related but have different ownership boundaries:
+
+| Service | Owns | Does not own |
+| --- | --- | --- |
+| `editorconfig` | General editor and repository defaults in `.editorconfig`. | Prettier-specific rules, ignore patterns, or formatter settings. |
+| `prettier` | Prettier ignore patterns in `.prettierignore` and the starter formatter config in `.prettierrc.json`. | General editor settings or unrelated repository files. |
+
+Prettier can read `.editorconfig`, so `editorconfig` may influence how Prettier
+formats files. That is expected: `editorconfig` defines shared editor defaults,
+while `prettier` defines formatter-specific policy. Keep repository-specific
+overrides outside each managed block.
+
 
 The Marketplace registry intentionally enables only the conservative
 `baseline` services by default. Additional services and bundles are available
@@ -480,6 +555,28 @@ without being enabled automatically:
 Community-health files, release metadata, and application configuration are
 not Marketplace defaults. They are organization- or project-specific and
 belong in global or repository `service_definitions`.
+
+### Optional configuration files
+
+These are reasonable service candidates, but they are intentionally not
+Marketplace defaults because their contents depend on the repository’s runtime,
+build system, or organization policy:
+
+| File | Suggested mode | Why it is optional |
+| --- | --- | --- |
+| `.dockerignore` | `block` | Ignore rules vary by language, build context, and container strategy. |
+| `.npmrc` | `file` or `init` | Registry, package-manager, and security settings are organization-specific. |
+| `.nvmrc` | `init` | Node version is a project decision. |
+| `.python-version` | `init` | Python version is a project and deployment decision. |
+| `.tool-versions` | `init` | A shared version manager file must match the repository’s toolchain. |
+| `.yamllint` or `.yamllint.yaml` | `file` or `init` | YAML rules vary across projects and may conflict with existing policy. |
+| `.codespellrc` | `file` or `init` | Ignore lists and dictionaries are repository-specific. |
+| `.git-blame-ignore-revs` | `file` | History policy should be authored by the repository. |
+
+Define these in global or repository `service_definitions` only after the
+canonical content and ownership are agreed. Do not manage both equivalent
+configuration formats for the same tool, such as `.markdownlint.json` and
+`.markdownlint.yaml`, in one repository.
 
 List the resolved service registry at any time:
 
@@ -538,7 +635,7 @@ A minimal repo config:
 ```json
 {
   "managed_file_sync": {
-    "services": ["common", "lf_line_endings", "dotfiles"],
+    "services": ["common", "lf_line_endings", "editorconfig"],
     "variables": {
       "owner": "Example Org"
     }
@@ -684,7 +781,7 @@ bos-sync validate --root .
 
 # Preview, then apply
 bos-sync apply --root . --dry-run
-bos-sync apply --root . --services common,dotfiles
+bos-sync apply --root . --services common,editorconfig
 
 # CI drift gate (dry-run + non-zero exit on drift)
 bos-sync check --root .
