@@ -1,10 +1,17 @@
 {
+  "managed_file_sync": {
+    "services": [
+      "bos_universal_action_test_kicker",
+      "bos_universal_marketplace_kicker"
+    ]
+  },
   "security": {
     "enable_python_lint": true,
     "python_version": "3.12"
   },
   "marketplace": {
     "enabled": true,
+    "target_branch": "main",
     "allowlist_paths": [
       "action.yml",
       "README.md",
@@ -31,11 +38,13 @@
       "LICENSE",
       "NOTICE"
     ],
+    "include_dependabot_config": true,
+    "include_github_metadata": false,
     "repo_metadata": {
       "enable": true,
       "homepage": "https://github.com/marketplace/actions/blackout-secure-managed-file-sync",
       "generate_topics": true,
-      "topics_fallback": "github-actions managed-files repo-standardization drift-detection codeowners dependabot editorconfig composite-action devops"
+      "topics_fallback": "github-actions code-scanning security sarif posture-audit gitleaks actionlint shellcheck composite-action devsecops github-advanced-security"
     }
   },
   "general": {

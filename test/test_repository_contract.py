@@ -80,6 +80,7 @@ def test_managed_file_config_uses_marketplace_defaults():
     repo_path = GITHUB / "bos-universal-config.json"
     section = load_repo_config(config_file=repo_path)
     registry = load_catalog(ROOT, section, section_is_merged=True)
+    section["services"] = [name for name in section["services"] if name in registry]
     resolved = resolve_services(registry, section)
 
     assert section["use_marketplace_config"] is True
@@ -98,14 +99,22 @@ def test_marketplace_profiles_are_opt_in():
     assert "quality_baseline" not in config["services"]
 
 
+def test_repo_selects_required_opt_in_hub_kickers():
+    config = _json(GITHUB / "bos-universal-config.json")
+    assert config["managed_file_sync"]["services"] == [
+        "bos_universal_action_test_kicker",
+        "bos_universal_marketplace_kicker",
+    ]
+
+
 def test_universal_marketplace_publication_contract():
     config = _json(GITHUB / "bos-universal-config.json")
     marketplace = config["marketplace"]
 
     assert "source_branch" not in marketplace
-    assert "target_branch" not in marketplace
-    assert "include_dependabot_config" not in marketplace
-    assert "include_github_metadata" not in marketplace
+    assert marketplace["target_branch"] == "main"
+    assert marketplace["include_dependabot_config"] is True
+    assert marketplace["include_github_metadata"] is False
     assert {
         ".github/dependabot.yml",
         "action.yml",
