@@ -21,7 +21,6 @@ from .markers import DEFAULT_NAMESPACE
 
 CONFIG_SECTION = "managed_file_sync"
 MARKETPLACE_CONFIG_FILE = "blackout-secure-managed-file-sync-marketplace-config.json"
-MARKETPLACE_LOCKED_CONFIG_FILE = "blackout-secure-managed-file-sync-marketplace-locked-config.json"
 DEFAULT_CONFIG_PATHS = (
     ".github/bos-universal-config.json",
     "bos-universal-config.json",
@@ -206,40 +205,6 @@ def _load_marketplace_config() -> dict[str, Any]:
     return _load_bundled_config(MARKETPLACE_CONFIG_FILE, label="marketplace")
 
 
-def _load_marketplace_locked_config() -> dict[str, Any]:
-    """Load locked marketplace defaults that cannot be overridden."""
-    return _load_bundled_config(MARKETPLACE_LOCKED_CONFIG_FILE, label="marketplace locked")
-
-
-def _apply_locked_defaults(
-    merged: dict[str, Any],
-    locked: dict[str, Any],
-) -> dict[str, Any]:
-    """Force locked keys to canonical values while preserving other merged fields."""
-    result = dict(merged)
-    for key, value in locked.items():
-        if key == "variables":
-            if not isinstance(value, dict):
-                raise ConfigError("marketplace locked config 'variables' must be an object")
-            current = result.get("variables") or {}
-            if not isinstance(current, dict):
-                raise ConfigError("'variables' must be a JSON object of string values")
-            for name, locked_value in value.items():
-                if name in current and str(current[name]) != str(locked_value):
-                    raise ConfigError(
-                        f"'variables.{name}' is locked by marketplace defaults and cannot be overridden"
-                    )
-            result["variables"] = {
-                **{str(name): str(val) for name, val in current.items()},
-                **{str(name): str(val) for name, val in value.items()},
-            }
-            continue
-        if key in result and result[key] != value:
-            raise ConfigError(f"'{key}' is locked by marketplace defaults and cannot be overridden")
-        result[key] = value
-    return result
-
-
 def load_repo_config(
     config_file: Path | None = None,
     global_config_file: Path | None = None,
@@ -250,7 +215,6 @@ def load_repo_config(
     """Load and merge marketplace + global + repo + inline config.
 
     Cascade (lower tier wins for scalars, deep merge for objects):
-        0. Locked marketplace config (always ON; non-overridable keys)
         1. Marketplace config (switchable built-in defaults)
         2. Global config (org/hub-level overrides)
         3. Repo config (repo-specific overrides)
@@ -292,8 +256,7 @@ def load_repo_config(
         if use_marketplace:
             marketplace_enabled = configured
 
-    locked_section = _load_marketplace_locked_config()
-    merged: dict[str, Any] = _apply_locked_defaults({}, locked_section)
+    merged: dict[str, Any] = {}
     if marketplace_enabled:
         marketplace_section = _load_marketplace_config()
         if _bool_field(
@@ -307,7 +270,7 @@ def load_repo_config(
         if section:
             merged = _merge_section(merged, section)
 
-    return _apply_locked_defaults(merged, locked_section)
+    return merged
 
 
 def parse_service_list(value: str | None) -> list[str]:
