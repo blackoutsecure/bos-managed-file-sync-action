@@ -121,79 +121,6 @@
           }
         ]
       },
-      "codeowners": {
-        "mode": "init",
-        "description": "CODEOWNERS stub (created only when missing). Set {{codeowner}} in config variables.",
-        "files": [
-          {
-            "path": ".github/CODEOWNERS",
-            "content_lines": [
-              "# Default owners for everything in this repository.",
-              "# Docs: https://docs.github.com/articles/about-code-owners",
-              "* {{codeowner}}"
-            ]
-          }
-        ]
-      },
-      "license": {
-        "mode": "init",
-        "description": "MIT LICENSE (created only when missing). Override for other licenses.",
-        "files": [
-          {
-            "path": "LICENSE",
-            "content_lines": [
-              "MIT License",
-              "",
-              "Copyright (c) {{year}} {{owner}}",
-              "",
-              "Permission is hereby granted, free of charge, to any person obtaining a copy",
-              "of this software and associated documentation files (the \"Software\"), to deal",
-              "in the Software without restriction, including without limitation the rights",
-              "to use, copy, modify, merge, publish, distribute, sublicense, and/or sell",
-              "copies of the Software, and to permit persons to whom the Software is",
-              "furnished to do so, subject to the following conditions:",
-              "",
-              "The above copyright notice and this permission notice shall be included in all",
-              "copies or substantial portions of the Software.",
-              "",
-              "THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR",
-              "IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,",
-              "FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE",
-              "AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER",
-              "LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,",
-              "OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE",
-              "SOFTWARE."
-            ]
-          }
-        ]
-      },
-      "notice_apache2": {
-        "mode": "init",
-        "description": "NOTICE file for Apache-2.0 projects (created only when missing).",
-        "files": [
-          {
-            "path": "NOTICE",
-            "content_lines": [
-              "{{repo}}",
-              "Copyright {{year}} {{owner}}",
-              "",
-              "This product includes software developed by {{owner}}.",
-              "",
-              "Licensed under the Apache License, Version 2.0 (the \"License\");",
-              "you may not use this file except in compliance with the License.",
-              "You may obtain a copy of the License at",
-              "",
-              "    http://www.apache.org/licenses/LICENSE-2.0",
-              "",
-              "Unless required by applicable law or agreed to in writing, software",
-              "distributed under the License is distributed on an \"AS IS\" BASIS,",
-              "WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.",
-              "See the License for the specific language governing permissions and",
-              "limitations under the License."
-            ]
-          }
-        ]
-      },
       "shellcheck": {
         "mode": "block",
         "description": "Shared ShellCheck configuration.",
@@ -257,63 +184,6 @@
           }
         ]
       },
-      "managed_file_sync_workflow": {
-        "mode": "update",
-        "description": "Opt-in workflow that updates existing managed-file synchronization workflows.",
-        "files": [
-          {
-            "path": ".github/workflows/managed-file-sync.yml",
-            "content_lines": [
-              "name: Managed file sync",
-              "",
-              "on:",
-              "  pull_request:",
-              "    branches: [main, dev]",
-              "  schedule:",
-              "    - cron: '29 14 * * 1'",
-              "  workflow_dispatch:",
-              "    inputs:",
-              "      mode:",
-              "        description: Check for drift or apply and commit updates.",
-              "        required: true",
-              "        type: choice",
-              "        options: [check, commit]",
-              "        default: commit",
-              "",
-              "permissions:",
-              "  contents: read",
-              "",
-              "jobs:",
-              "  sync:",
-              "    runs-on: {{SELECTED_RUNNER}}",
-              "    permissions:",
-              "      contents: write",
-              "    steps:",
-              "      - uses: actions/checkout@v4",
-              "        with:",
-              "          persist-credentials: false",
-              "",
-              "      - id: sync",
-              "        uses: blackoutsecure/bos-managed-file-sync-action@v1",
-              "        with:",
-              "          dry_run: ${{ github.event_name == 'pull_request' || inputs.mode == 'check' }}",
-              "          fail_on_drift: ${{ github.event_name == 'pull_request' || inputs.mode == 'check' }}",
-              "          show_diff: 'true'",
-              "",
-              "      - name: Commit synchronized files",
-              "        if: steps.sync.outputs.changed == 'true' && github.event_name != 'pull_request' && inputs.mode != 'check'",
-              "        env:",
-              "          GH_TOKEN: ${{ github.token }}",
-              "        run: |",
-              "          git config user.name 'github-actions[bot]'",
-              "          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'",
-              "          git add -- .",
-              "          git commit -m 'chore: sync managed files'",
-              "          git push"
-            ]
-          }
-        ]
-      },
       "baseline": {
         "description": "Bundle: the services most repositories want on day one.",
         "includes": [
@@ -322,6 +192,14 @@
           "dotfiles",
           "markdownlint",
           "dependabot_actions"
+        ]
+      },
+      "quality_baseline": {
+        "description": "Bundle: baseline repository hygiene plus ShellCheck and Prettier policy.",
+        "includes": [
+          "baseline",
+          "shellcheck",
+          "prettier"
         ]
       }
     }
