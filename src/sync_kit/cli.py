@@ -175,7 +175,6 @@ def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
     pending = [item for item in result.file_results if result.dry_run and item.action]
     compliant = [item for item in result.file_results if item.action is None]
     applied = [item for item in result.file_results if not result.dry_run and item.action]
-    verdict = "changes pending" if pending else "complete"
     service_results: dict[str, list[FileResult]] = {}
     for item in result.file_results:
         service_results.setdefault(item.service, []).append(item)
@@ -207,6 +206,20 @@ def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
 
     excluded = plan.section.get("exclude_services") or []
     disabled = plan.section.get("disabled_services") or []
+    configured_services = plan.section.get("services") or []
+    if isinstance(configured_services, dict):
+        requested_services = [name for name, enabled in configured_services.items() if enabled]
+    elif isinstance(configured_services, list):
+        requested_services = [str(name) for name in configured_services]
+    else:
+        requested_services = []
+    verdict = (
+        "changes pending"
+        if pending
+        else "filtered"
+        if not result.file_results and (excluded or disabled)
+        else "complete"
+    )
     marketplace = plan.section.get("marketplace") or {}
     allowlist = marketplace.get("allowlist_paths") or []
     blocked = marketplace.get("blocked_paths") or []
@@ -273,7 +286,7 @@ def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
         "",
         "### Sync status",
         "",
-        f"{'All managed files are in sync.' if not result.changed else f'Drift detected: {len(result.changed_files)} file(s) would change.' if result.dry_run else f'Applied {len(result.changed_files)} file(s) and updated the repo.'}",
+        f"{'No active managed files were evaluated; configured services were excluded or disabled.' if not result.file_results and (excluded or disabled) else 'All managed files are in sync.' if not result.changed else f'Drift detected: {len(result.changed_files)} file(s) would change.' if result.dry_run else f'Applied {len(result.changed_files)} file(s) and updated the repo.'}",
         "",
         "### Resolved configuration",
         "",
@@ -286,16 +299,31 @@ def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
         f"mode: {'dry-run' if result.dry_run else 'apply'}",
         "</pre>",
         "",
-        "### Action breakdown",
-        "",
-        "| Action | Count |",
-        "| --- | ---: |",
     ]
-    for label in visible_actions:
-        lines.append(f"| {label} | {action_counts.get(label, 0)} |")
+
+    if visible_actions:
+        lines.extend(
+            [
+                "### Action breakdown",
+                "",
+                "| Action | Count |",
+                "| --- | ---: |",
+            ]
+        )
+        for label in visible_actions:
+            lines.append(f"| {label} | {action_counts.get(label, 0)} |")
 
     lines.extend(
         [
+            "",
+            "### Service selection",
+            "",
+            "| State | Services |",
+            "| --- | --- |",
+            f"| Requested | <code>{escaped(serialize(requested_services))}</code> |",
+            f"| Resolved | <code>{escaped(serialize([service.name for service in plan.services]))}</code> |",
+            f"| Excluded | <code>{escaped(serialize(excluded))}</code> |",
+            f"| Disabled | <code>{escaped(serialize(disabled))}</code> |",
             "",
             "### Configuration",
             "",
@@ -306,8 +334,6 @@ def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
             f"| Global config | <code>{escaped(plan.global_config_file or '(none)')}</code> |",
             f"| Direction | <code>{escaped(plan.direction)}</code> |",
             f"| Marker namespace | <code>{escaped(plan.namespace)}</code> |",
-            f"| Excluded services | <code>{escaped(serialize(excluded))}</code> |",
-            f"| Disabled services | <code>{escaped(serialize(disabled))}</code> |",
             f"| Allowlist paths | <code>{escaped(serialize(allowlist))}</code> |",
             f"| Blocked paths | <code>{escaped(serialize(blocked))}</code> |",
             f"| Required paths | <code>{escaped(serialize(required))}</code> |",
