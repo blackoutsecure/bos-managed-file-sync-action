@@ -32,6 +32,17 @@ def _yaml_scalar(document: str, key: str, *, indent: int = 0) -> str:
     return next(value for value in matches[0] if value)
 
 
+def _folded_json(document: str, key: str, *, indent: int) -> dict:
+    prefix = " " * indent
+    match = re.search(
+        rf"^{re.escape(prefix + key)}: >-\n^{re.escape(prefix + '  ')}(.+)$",
+        document,
+        re.MULTILINE,
+    )
+    assert match is not None, f"expected folded JSON value for {key!r}"
+    return json.loads(match.group(1))
+
+
 def test_action_metadata_matches_package_metadata():
     action = (ROOT / "action.yml").read_text(encoding="utf-8")
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
@@ -212,13 +223,45 @@ def test_sync_kicker_uses_inline_global_policy_and_commits_changes():
     assert "- cron: '29 14 * * 1'" in workflow
     assert "- '.github/bos-universal-config.json'" in workflow
     assert 'global_config_json: >-' in workflow
-    assert '"services": [' in workflow
-    assert '"dotfiles"' in workflow
-    assert '"shellcheck"' in workflow
-    assert '"dependabot_actions"' in workflow
     assert "dry_run: ${{ (inputs.mode || 'commit') == 'check' }}" in workflow
     assert "fail_on_drift: ${{ (inputs.mode || 'commit') == 'check' }}" in workflow
     assert "actions/shared/commit-and-push@main" in workflow
+
+    section = _folded_json(workflow, "global_config_json", indent=10)["managed_file_sync"]
+    assert section["services"] == [
+        "dotfiles",
+        "shellcheck",
+        "bos_universal_action_test_kicker",
+        "bos_universal_launchpad_kicker",
+        "bos_universal_marketplace_kicker",
+        "bos_universal_security_kicker",
+        "bos_universal_sync_kicker",
+    ]
+    assert section["exclude_services"] == ["dependabot_actions"]
+    definitions = section["service_definitions"]
+    assert set(definitions) == {
+        "bos_universal_action_test_kicker",
+        "bos_universal_launchpad_kicker",
+        "bos_universal_marketplace_kicker",
+        "bos_universal_security_kicker",
+        "bos_universal_sync_kicker",
+    }
+    for name, definition in definitions.items():
+        assert definition["mode"] == "update"
+        assert len(definition["files"]) == 1
+        managed = definition["files"][0]
+        assert managed["path"] == f".github/workflows/{name.replace('_', '-')}.yml"
+        assert managed["content_lines"]
+
+    template_content = "\n".join(
+        line
+        for definition in definitions.values()
+        for managed in definition["files"]
+        for line in managed["content_lines"]
+    )
+    assert "\\u0024{{" in workflow
+    assert "${{" in template_content
+    assert "\\u0024{{" not in template_content
 
 
 def test_codeql_caller_avoids_duplicate_pull_request_scanner():
