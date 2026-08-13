@@ -178,8 +178,7 @@ jobs:
       release_draft: ${{ inputs.draft }}
       release_make_latest: 'true'
       release_generate_notes: true
-    secrets:
-      RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
+    secrets: inherit
 
   metadata:
     name: Marketplace repository metadata
@@ -215,5 +214,4 @@ jobs:
       show_deployments: ${{ fromJson(needs.parse_config.outputs.cfg).marketplace.repo_metadata.show_deployments == true }}
       show_packages: ${{ fromJson(needs.parse_config.outputs.cfg).marketplace.repo_metadata.show_packages == true }}
       dry_run: ${{ inputs.dry_run || fromJson(needs.parse_config.outputs.cfg).marketplace.repo_metadata.dry_run == true }}
-    secrets:
-      REPO_ADMIN_PAT: ${{ secrets.REPO_ADMIN_PAT }}
+    secrets: inherit
