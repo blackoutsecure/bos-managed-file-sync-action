@@ -1,6 +1,7 @@
 {
   "managed_file_sync": {
     "description": "Blackout Secure marketplace best practices — switchable defaults that can be disabled with use_marketplace_config: false or selectively overridden by global/repo config. Dependency hygiene for workflow pins is enabled by default via dependabot_actions.",
+    "direction": "source-to-destination",
     "use_marketplace_config": true,
     "marker_namespace": "managed-file-sync",
     "managed_note": "Managed by Blackout Secure. Best practices applied via marketplace config, customized in .github/blackout-secure-managed-file-sync-global-config.json and .github/bos-universal-config.json.",
@@ -12,7 +13,9 @@
       "dotfiles"
     ],
     "exclude_services": [],
-    "variables": {},
+    "variables": {
+      "fallback_default_runner": "ubuntu-latest"
+    },
     "service_definitions": {
       "common": {
         "mode": "block",
@@ -250,6 +253,63 @@
               "  \"MD033\": false,",
               "  \"MD041\": false",
               "}"
+            ]
+          }
+        ]
+      },
+      "managed_file_sync_workflow": {
+        "mode": "file",
+        "description": "Opt-in workflow that runs and commits managed-file synchronization.",
+        "files": [
+          {
+            "path": ".github/workflows/managed-file-sync.yml",
+            "content_lines": [
+              "name: Managed file sync",
+              "",
+              "on:",
+              "  pull_request:",
+              "    branches: [main, dev]",
+              "  schedule:",
+              "    - cron: '29 14 * * 1'",
+              "  workflow_dispatch:",
+              "    inputs:",
+              "      mode:",
+              "        description: Check for drift or apply and commit updates.",
+              "        required: true",
+              "        type: choice",
+              "        options: [check, commit]",
+              "        default: commit",
+              "",
+              "permissions:",
+              "  contents: read",
+              "",
+              "jobs:",
+              "  sync:",
+              "    runs-on: {{SELECTED_RUNNER}}",
+              "    permissions:",
+              "      contents: write",
+              "    steps:",
+              "      - uses: actions/checkout@v4",
+              "        with:",
+              "          persist-credentials: false",
+              "",
+              "      - id: sync",
+              "        uses: blackoutsecure/bos-managed-file-sync-action@v1",
+              "        with:",
+              "          dry_run: ${{ github.event_name == 'pull_request' || inputs.mode == 'check' }}",
+              "          fail_on_drift: ${{ github.event_name == 'pull_request' || inputs.mode == 'check' }}",
+              "          show_diff: 'true'",
+              "",
+              "      - name: Commit synchronized files",
+              "        if: steps.sync.outputs.changed == 'true' && github.event_name != 'pull_request' && inputs.mode != 'check'",
+              "        env:",
+              "          GH_TOKEN: ${{ github.token }}",
+              "        run: |",
+              "          git config user.name 'github-actions[bot]'",
+              "          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'",
+              "          git add -- .",
+              "          git commit -m 'chore: sync managed files'",
+              "          git push"
             ]
           }
         ]

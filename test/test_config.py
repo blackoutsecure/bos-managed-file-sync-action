@@ -134,10 +134,7 @@ def test_inline_global_config_merges_below_repo_config(repo):
 
 def test_no_config_file_yields_empty_section():
     config = load_repo_config(None, use_marketplace=False)
-    assert config == {
-        "direction": "source-to-destination",
-        "variables": {"fallback_default_runner": "ubuntu-latest"},
-    }
+    assert config == {}
 
 
 @pytest.mark.parametrize(
@@ -318,9 +315,7 @@ def test_marketplace_config_is_loaded_by_default():
 def test_marketplace_config_can_be_disabled():
     """use_marketplace_config: false should disable marketplace tier."""
     config = load_repo_config(None, use_marketplace=False)
-    # Switchable marketplace defaults are disabled, but locked defaults remain.
-    assert config["direction"] == "source-to-destination"
-    assert config["variables"]["fallback_default_runner"] == "ubuntu-latest"
+    assert config == {}
     assert "services" not in config
 
 
@@ -499,7 +494,7 @@ def test_use_marketplace_services_false_replaces_instead_of_appending(repo):
     assert config["services"] == ["prettier"]
 
 
-def test_repo_cannot_override_locked_direction(repo):
+def test_repo_can_override_direction_validation(repo):
     repo_path = repo.write(
         "bos-universal-config.json",
         json.dumps(
@@ -512,11 +507,13 @@ def test_repo_cannot_override_locked_direction(repo):
         ),
     )
 
-    with pytest.raises(ConfigError, match="locked"):
-        load_repo_config(repo_path, use_marketplace=True)
+    config = load_repo_config(repo_path, use_marketplace=False)
+    assert config["direction"] == "destination-to-source"
+    with pytest.raises(ConfigError, match="source-to-destination"):
+        sync_direction(config)
 
 
-def test_repo_cannot_override_locked_fallback_runner(repo):
+def test_repo_can_override_fallback_runner(repo):
     repo_path = repo.write(
         "bos-universal-config.json",
         json.dumps(
@@ -531,8 +528,8 @@ def test_repo_cannot_override_locked_fallback_runner(repo):
         ),
     )
 
-    with pytest.raises(ConfigError, match="variables.fallback_default_runner"):
-        load_repo_config(repo_path, use_marketplace=True)
+    config = load_repo_config(repo_path, use_marketplace=False)
+    assert config["variables"]["fallback_default_runner"] == "self-hosted"
 
 
 def test_exclude_services_lists_are_appended(repo):

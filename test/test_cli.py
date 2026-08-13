@@ -39,6 +39,24 @@ def test_services_flag_without_config(repo):
     assert repo.exists(".editorconfig")
 
 
+def test_managed_file_sync_workflow_service_writes_the_invoking_workflow(repo):
+    assert (
+        main(
+            [
+                "apply",
+                "--root",
+                str(repo.root),
+                "--services",
+                "managed_file_sync_workflow",
+            ]
+        )
+        == EXIT_OK
+    )
+    workflow = repo.read(".github/workflows/managed-file-sync.yml")
+    assert "runs-on: ubuntu-latest" in workflow
+    assert "uses: blackoutsecure/bos-managed-file-sync-action@v1" in workflow
+
+
 def test_config_json_argument_overrides_file_based_config(repo):
     assert (
         main(

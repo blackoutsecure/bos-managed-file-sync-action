@@ -197,19 +197,14 @@ apply mode, a successfully created, updated, or deleted file is marked
 
 ## 🏗️ Configuration inheritance and layering
 
-This action uses a **five-tier config cascade** with locked built-in defaults,
-switchable marketplace defaults, org-wide defaults, repo-specific overrides,
-and CI-level workflow inputs. This pattern combines safety (locked invariants)
-with flexibility (switchable + overrideable policy).
+This action uses a **four-tier config cascade** with switchable marketplace
+defaults, org-wide defaults, repo-specific overrides, and CI-level workflow
+inputs. The default sync direction and runner fallback are set in the runtime
+defaults so they are easy to override without needing a special locked tier.
 
-### Five tiers of configuration
+### Configuration tiers
 
 The config is merged in cascade order:
-
-0. **Tier 0: Locked marketplace defaults** (built-in, always ON)
-  Shipped with the action and always applied: one-way sync direction and
-  `variables.fallback_default_runner`. These locked keys are not overridable
-  by global or repo config.
 
 1. **Tier 1: Marketplace config** (built-in, default ON)  
    Shipped with the action: best-practice services (`common`, `lf_line_endings`,
@@ -248,11 +243,10 @@ The config is merged in cascade order:
 - **Service array override mode**: set `use_marketplace_services: false` in a
   tier to replace inherited `services` instead of appending.
 - **Disabling marketplace**: set `use_marketplace_config: false` in org or repo
-  config to remove tier 0 and merge only global+repo+workflow.
+  config to merge only global+repo+workflow.
 
 ### Recommended file paths
 
-- **Locked marketplace config**: `src/sync_kit/blackout-secure-managed-file-sync-marketplace-locked-config.json` (always-on invariants)
 - **Marketplace config**: `src/sync_kit/blackout-secure-managed-file-sync-marketplace-config.json` (switchable defaults)
 - **Org global config**: `.github/blackout-secure-managed-file-sync-global-config.json` (optional, hub-authored and present in the destination checkout)
 - **Repo config**: `.github/bos-universal-config.json` (preferred, optional per repo)
@@ -435,6 +429,7 @@ global or repo config.
 | `shellcheck` | block | `.shellcheckrc` |
 | `prettier` | block + init | `.prettierignore`, `.prettierrc.json` |
 | `markdownlint` | file | `.markdownlint.json` |
+| `managed_file_sync_workflow` | file | `.github/workflows/managed-file-sync.yml` |
 | `baseline` | bundle | `common`, `lf_line_endings`, `dotfiles`, `markdownlint`, `dependabot_actions` |
 
 List the resolved service registry at any time:
@@ -442,6 +437,26 @@ List the resolved service registry at any time:
 ```bash
 bos-sync services
 ```
+
+### Managing the sync workflow
+
+Enable `managed_file_sync_workflow` to have the service manage the workflow
+that invokes this action. It is deliberately opt-in and is not part of
+`baseline`, because it owns a workflow file and its trigger/commit policy.
+
+```json
+{
+  "managed_file_sync": {
+    "services": ["managed_file_sync_workflow"]
+  }
+}
+```
+
+The managed workflow writes to `.github/workflows/managed-file-sync.yml`. Pull
+requests run a dry-run drift check; scheduled runs and `workflow_dispatch` in
+`commit` mode apply and commit updates. A manual `check` run only reports
+drift. Override this service in global or repo config when your organization
+needs different triggers, permissions, action pins, or commit behavior.
 
 ## 🧩 Managed blocks
 
@@ -613,7 +628,7 @@ Service paths can be handled in two ways:
 Built-in destinations are listed once in [Built-in services](#-built-in-services).
 
 Built-in config layers are bundled in:
-- [src/sync_kit/blackout-secure-managed-file-sync-marketplace-locked-config.json](src/sync_kit/blackout-secure-managed-file-sync-marketplace-locked-config.json)
+
 - [src/sync_kit/blackout-secure-managed-file-sync-marketplace-config.json](src/sync_kit/blackout-secure-managed-file-sync-marketplace-config.json)
 
 ## 💻 Local usage (CLI)

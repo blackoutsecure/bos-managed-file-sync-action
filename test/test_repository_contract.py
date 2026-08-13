@@ -73,7 +73,6 @@ def test_managed_file_config_disables_duplicate_self_management():
 
     assert section == {
         "direction": "source-to-destination",
-        "variables": {"fallback_default_runner": "ubuntu-latest"},
         "use_marketplace_config": False,
     }
     assert resolved == []

@@ -20,12 +20,22 @@ DEFAULT_SERVICES = (
     "shellcheck",
     "prettier",
     "markdownlint",
+    "managed_file_sync_workflow",
 )
 
 
 @pytest.mark.parametrize("name", DEFAULT_SERVICES)
 def test_default_catalog_contains_expected_service(repo, name):
     assert name in load_catalog(repo.root)
+
+
+def test_managed_file_sync_workflow_service_is_opt_in_and_renders_runner(repo):
+    catalog = load_catalog(repo.root)
+    assert "managed_file_sync_workflow" not in resolve_services(catalog, {"services": ["baseline"]})
+
+    workflow = resolve_services(catalog, {"services": ["managed_file_sync_workflow"]})[0]
+    assert workflow.files[0].path == ".github/workflows/managed-file-sync.yml"
+    assert "runs-on: {{SELECTED_RUNNER}}" in workflow.files[0].content
 
 
 def test_repo_definitions_override_catalog(repo):
