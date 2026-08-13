@@ -35,8 +35,22 @@ def test_no_config_and_no_services_is_a_no_op(repo):
 
 
 def test_services_flag_without_config(repo):
-    assert main(["apply", "--root", str(repo.root), "--services", "dotfiles"]) == EXIT_OK
+    assert main(["apply", "--root", str(repo.root), "--services", "editorconfig"]) == EXIT_OK
     assert repo.exists(".editorconfig")
+
+
+def test_editorconfig_service_preserves_custom_content(repo):
+    repo.write(
+        ".editorconfig",
+        "root = true\n\n[*.toml]\nindent_size = 2\n",
+    )
+
+    assert main(["apply", "--root", str(repo.root), "--services", "editorconfig"]) == EXIT_OK
+
+    editorconfig = repo.read(".editorconfig")
+    assert "[*.toml]\nindent_size = 2" in editorconfig
+    assert "# >>> managed-file-sync:editorconfig >>>" in editorconfig
+    assert "[*]\ncharset = utf-8" in editorconfig
 
 
 def test_managed_file_sync_workflow_service_updates_the_invoking_workflow(repo):
@@ -105,7 +119,7 @@ def test_config_json_argument_overrides_file_based_config(repo):
 def test_global_config_json_argument_overrides_file_based_global_config(repo):
     repo.write(
         ".github/blackout-secure-managed-file-sync-global-config.json",
-        '{"managed_file_sync":{"services":["dotfiles"]}}',
+        '{"managed_file_sync":{"services":["editorconfig"]}}',
     )
 
     assert (
@@ -242,7 +256,7 @@ def test_conflicting_services_return_config_exit_code(repo):
 def test_readme_minimal_config_is_valid(repo):
     """The minimal config documented in the README must resolve against marketplace defaults."""
     section = {
-        "services": ["common", "lf_line_endings", "dotfiles"],
+        "services": ["common", "lf_line_endings", "editorconfig"],
         "variables": {"owner": "Example Org"},
     }
     repo.write_config(section)
@@ -381,7 +395,7 @@ def test_github_summary_includes_config_details(repo, monkeypatch):
         {
             "use_marketplace_config": True,
             "security": {"enable_python_lint": True, "python_version": "3.12"},
-            "services": ["common", "dotfiles"],
+            "services": ["common", "editorconfig"],
             "exclude_services": ["markdownlint"],
             "disabled_services": ["dependabot_actions"],
             "marketplace": {

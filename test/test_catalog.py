@@ -13,7 +13,7 @@ DEFAULT_SERVICES = (
     "common",
     "lf_line_endings",
     "dependabot_actions",
-    "dotfiles",
+    "editorconfig",
     "shellcheck",
     "prettier",
     "markdownlint",
@@ -30,7 +30,7 @@ def test_quality_baseline_bundle_adds_optional_quality_services(repo):
     assert [service.name for service in resolve_services(catalog, {"services": ["quality_baseline"]})] == [
         "common",
         "lf_line_endings",
-        "dotfiles",
+        "editorconfig",
         "markdownlint",
         "dependabot_actions",
         "shellcheck",
@@ -243,8 +243,18 @@ def test_per_file_mode_overrides_service_mode():
 
 def test_resolve_services_from_list(repo):
     catalog = load_catalog(repo.root)
-    services = resolve_services(catalog, {"services": ["common", "dotfiles"]})
-    assert [s.name for s in services] == ["common", "dotfiles"]
+    services = resolve_services(catalog, {"services": ["common", "editorconfig"]})
+    assert [s.name for s in services] == ["common", "editorconfig"]
+
+
+def test_prettier_uses_block_for_ignore_and_init_for_json_config(repo):
+    prettier = load_catalog(repo.root)["prettier"]
+
+    assert prettier.mode == "block"
+    assert [(managed.path, managed.mode) for managed in prettier.files] == [
+        (".prettierignore", "block"),
+        (".prettierrc.json", "init"),
+    ]
 
 
 def test_resolve_services_from_mapping(repo):
@@ -260,14 +270,14 @@ def test_service_mapping_values_must_be_boolean(repo):
 
 def test_disabled_services_are_skipped(repo):
     catalog = load_catalog(repo.root)
-    section = {"services": ["common", "dotfiles"], "disabled_services": ["dotfiles"]}
+    section = {"services": ["common", "editorconfig"], "disabled_services": ["editorconfig"]}
     assert [s.name for s in resolve_services(catalog, section)] == ["common"]
 
 
 def test_exclude_services_are_skipped(repo):
     catalog = load_catalog(repo.root)
-    section = {"services": ["common", "dotfiles"], "exclude_services": ["common"]}
-    assert [s.name for s in resolve_services(catalog, section)] == ["dotfiles"]
+    section = {"services": ["common", "editorconfig"], "exclude_services": ["common"]}
+    assert [s.name for s in resolve_services(catalog, section)] == ["editorconfig"]
 
 
 def test_wildcard_selects_every_file_service(repo):
@@ -281,10 +291,15 @@ def test_unknown_service_raises(repo):
         resolve_services(load_catalog(repo.root), {"services": ["does_not_exist"]})
 
 
+def test_removed_dotfiles_service_name_is_unknown(repo):
+    with pytest.raises(ConfigError, match="unknown service"):
+        resolve_services(load_catalog(repo.root), {"services": ["dotfiles"]})
+
+
 def test_input_services_override_config(repo):
     catalog = load_catalog(repo.root)
-    services = resolve_services(catalog, {"services": ["common"]}, ["dotfiles"])
-    assert [s.name for s in services] == ["dotfiles"]
+    services = resolve_services(catalog, {"services": ["common"]}, ["editorconfig"])
+    assert [s.name for s in services] == ["editorconfig"]
 
 
 def test_bundle_expands_to_members(repo):
@@ -293,7 +308,7 @@ def test_bundle_expands_to_members(repo):
     assert [s.name for s in services] == [
         "common",
         "lf_line_endings",
-        "dotfiles",
+        "editorconfig",
         "markdownlint",
         "dependabot_actions",
     ]

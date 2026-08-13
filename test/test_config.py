@@ -100,7 +100,7 @@ def test_inline_global_config_merges_below_repo_config(repo):
         ".github/blackout-secure-managed-file-sync-global-config.json",
         json.dumps({
             "managed_file_sync": {
-                "services": ["dotfiles"],
+                "services": ["editorconfig"],
                 "variables": {"org_name": "global-org", "shared": "global-value"},
             }
         }),
@@ -127,7 +127,7 @@ def test_inline_global_config_merges_below_repo_config(repo):
         }),
     )
 
-    assert config["services"] == ["dotfiles", "prettier", "common"]
+    assert config["services"] == ["editorconfig", "prettier", "common"]
     assert config["variables"]["org_name"] == "inline-global"
     assert config["variables"]["shared"] == "repo-value"
 
@@ -140,7 +140,7 @@ def test_no_config_file_yields_empty_section():
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
-        ("common, prettier  dotfiles", ["common", "prettier", "dotfiles"]),
+        ("common, prettier  editorconfig", ["common", "prettier", "editorconfig"]),
         ("", []),
         (None, []),
     ],
@@ -306,7 +306,7 @@ def test_marketplace_config_is_loaded_by_default():
     assert "common" in config.get("services", [])
     assert "lf_line_endings" in config.get("services", [])
     assert "dependabot_actions" in config.get("services", [])
-    assert "dotfiles" in config.get("services", [])
+    assert "editorconfig" in config.get("services", [])
     assert config.get("direction") == "source-to-destination"
     assert config.get("marker_namespace") == "managed-file-sync"
     assert "exclude_paths" not in config
@@ -345,7 +345,7 @@ def test_repo_config_can_reenable_marketplace_disabled_by_global_config(repo):
             {
                 "managed_file_sync": {
                     "use_marketplace_config": False,
-                    "services": ["dotfiles"],
+                    "services": ["editorconfig"],
                 }
             }
         ),
@@ -369,7 +369,7 @@ def test_repo_config_can_reenable_marketplace_disabled_by_global_config(repo):
         "lf_line_endings",
         "markdownlint",
         "dependabot_actions",
-        "dotfiles",
+        "editorconfig",
         "prettier",
     ]
     assert "common" in config["service_definitions"]
@@ -403,7 +403,7 @@ def test_repo_config_merges_with_marketplace(repo):
         "lf_line_endings",
         "markdownlint",
         "dependabot_actions",
-        "dotfiles",
+        "editorconfig",
         "prettier",
     ]
     # Marketplace marker_namespace should be inherited
@@ -418,7 +418,7 @@ def test_global_and_repo_configs_merge(repo):
         ".github/blackout-secure-managed-file-sync-global-config.json",
         json.dumps({
             "managed_file_sync": {
-                "services": ["common", "dotfiles"],
+                "services": ["common", "editorconfig"],
                 "variables": {
                     "org_name": "my-org",
                     "support_email": "platform@my-org.com",
@@ -437,7 +437,7 @@ def test_global_and_repo_configs_merge(repo):
     )
     config = load_repo_config(repo_path, global_path, use_marketplace=False)
     # Repo services append to global by default.
-    assert config["services"] == ["common", "dotfiles", "prettier"]
+    assert config["services"] == ["common", "editorconfig", "prettier"]
     # Variables merge (org variables + repo variables)
     assert config["variables"]["org_name"] == "my-org"
     assert config["variables"]["project_name"] == "my-project"
@@ -449,7 +449,7 @@ def test_marketplace_global_and_repo_cascade(repo):
         ".github/blackout-secure-managed-file-sync-global-config.json",
         json.dumps({
             "managed_file_sync": {
-                "services": ["common", "dotfiles"],
+                "services": ["common", "editorconfig"],
                 "variables": {"org_name": "my-org"},
             }
         }),
@@ -470,7 +470,7 @@ def test_marketplace_global_and_repo_cascade(repo):
         "lf_line_endings",
         "markdownlint",
         "dependabot_actions",
-        "dotfiles",
+        "editorconfig",
         "prettier",
     ]
     assert config["variables"]["org_name"] == "my-org"  # Global

@@ -10,7 +10,7 @@
       "lf_line_endings",
       "markdownlint",
       "dependabot_actions",
-      "dotfiles"
+        "editorconfig"
     ],
     "exclude_services": [],
     "variables": {
@@ -92,15 +92,16 @@
           }
         ]
       },
-      "dotfiles": {
-        "mode": "init",
-        "description": "Baseline editor configuration (created only when missing).",
+      "editorconfig": {
+        "mode": "block",
+        "description": "Baseline editor configuration managed in a dedicated block.",
         "files": [
           {
             "path": ".editorconfig",
+            "scaffold": [
+              "root = true"
+            ],
             "content_lines": [
-              "root = true",
-              "",
               "[*]",
               "charset = utf-8",
               "end_of_line = lf",
@@ -189,7 +190,7 @@
         "includes": [
           "common",
           "lf_line_endings",
-          "dotfiles",
+          "editorconfig",
           "markdownlint",
           "dependabot_actions"
         ]

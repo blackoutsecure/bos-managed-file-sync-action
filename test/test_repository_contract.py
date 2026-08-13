@@ -88,7 +88,7 @@ def test_managed_file_config_uses_marketplace_defaults():
         "lf_line_endings",
         "markdownlint",
         "dependabot_actions",
-        "dotfiles",
+        "editorconfig",
     ]
 
 
