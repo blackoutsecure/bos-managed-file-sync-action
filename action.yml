@@ -10,14 +10,14 @@ branding:
 inputs:
   use_global_config:
     description: >-
-      `true` to merge an org/hub-level global config. Disabled by default.
+      `auto` loads the org/hub-level global config when present. `true`
+      requires it; `false` disables it.
     required: false
-    default: 'false'
+    default: 'auto'
   global_config_path:
     description: >-
-      Path to an org/hub-level config file used when `use_global_config` is
-      `true`. Merged as the first tier; repo config (config_path) overrides it.
-      Use to enforce org-wide standards while allowing repo-specific overrides.
+      Org/hub-level config path. Auto-discovered by default and merged as the
+      first tier; repo config (config_path) overrides it.
     required: false
     default: '.github/blackout-secure-managed-file-sync-global-config.json'
   config_path:
@@ -36,10 +36,11 @@ inputs:
     default: ''
   managed_files_path:
     description: >-
-      Relative path to managed file templates used by `content_file` entries in
-      service definitions. Defaults to `.github/managed-files`.
+      Optional workflow override for the managed template directory used by
+      `content_file` entries. When empty, the merged config value is used,
+      falling back to `.github/managed-files`.
     required: false
-    default: '.github/managed-files'
+    default: ''
   workload_arch:
     description: >-
       Runner workload selection for built-in variables: `auto`, `x64`,
@@ -91,13 +92,6 @@ runs:
       with:
         python-version: ${{ inputs.python_version }}
 
-    - name: Install bos-managed-file-sync
-      shell: bash
-      run: |
-        set -euo pipefail
-        python3 -m pip install --quiet --upgrade pip
-        python3 -m pip install --quiet "${GITHUB_ACTION_PATH}"
-
     - id: sync
       name: Sync managed files
       shell: bash
@@ -108,18 +102,24 @@ runs:
         MFS_CONFIG_PATH:         ${{ inputs.config_path }}
         MFS_SERVICES:            ${{ inputs.services }}
         MFS_MANAGED_FILES_PATH:  ${{ inputs.managed_files_path }}
-        MFS_WORKLOAD_ARCH:      ${{ inputs.workload_arch }}
+        MFS_WORKLOAD_ARCH:       ${{ inputs.workload_arch }}
         MFS_DRY_RUN:             ${{ inputs.dry_run }}
         MFS_FAIL_ON_DRIFT:       ${{ inputs.fail_on_drift }}
         MFS_SHOW_DIFF:           ${{ inputs.show_diff }}
       run: |
         set -euo pipefail
 
-        args=(--root .)
+        args=(--root . --global-config "${MFS_GLOBAL_CONFIG_PATH}")
 
-        if [[ "${MFS_USE_GLOBAL_CONFIG}" == "true" ]]; then
-          args+=(--use-global-config --global-config "${MFS_GLOBAL_CONFIG_PATH}")
-        fi
+        case "${MFS_USE_GLOBAL_CONFIG}" in
+          auto|'') ;;
+          true) args+=(--use-global-config) ;;
+          false) args+=(--no-global-config) ;;
+          *)
+            echo "::error::use_global_config must be 'auto', 'true', or 'false'" >&2
+            exit 2
+            ;;
+        esac
 
         if [[ -n "${MFS_CONFIG_PATH}" ]]; then
           args+=(--config "${MFS_CONFIG_PATH}")
@@ -145,4 +145,4 @@ runs:
           args+=(--no-diff)
         fi
 
-        bos-sync apply "${args[@]}"
+        python3 -I "${GITHUB_ACTION_PATH}/src/sync_kit/_bootstrap.py" apply "${args[@]}"

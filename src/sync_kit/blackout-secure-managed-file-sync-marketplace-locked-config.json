@@ -1,0 +1,8 @@
+{
+  "managed_file_sync": {
+    "direction": "source-to-destination",
+    "variables": {
+      "fallback_default_runner": "ubuntu-latest"
+    }
+  }
+}

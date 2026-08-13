@@ -1,31 +1,18 @@
 {
   "managed_file_sync": {
-    "description": "Blackout Secure marketplace best practices — shipped with the action. Base template path defaults to .github/managed-files via managed_files_path. Runner defaults are provided here and can be overridden by org-level (global) or repo-level configs, with runtime detection/fallback in code. Disable with use_marketplace_config: false.",
+    "description": "Blackout Secure marketplace best practices — switchable defaults that can be disabled with use_marketplace_config: false or selectively overridden by global/repo config. Dependency hygiene for workflow pins is enabled by default via dependabot_actions.",
     "use_marketplace_config": true,
-    "managed_files_path": ".github/managed-files",
     "marker_namespace": "managed-file-sync",
     "managed_note": "Managed by Blackout Secure. Best practices applied via marketplace config, customized in .github/blackout-secure-managed-file-sync-global-config.json and .github/bos-universal-config.json.",
     "services": [
       "common",
       "lf_line_endings",
-      "markdownlint"
+      "markdownlint",
+      "dependabot_actions",
+      "dotfiles"
     ],
     "exclude_services": [],
-    "exclude_paths": [
-      "dependabot.yml",
-      ".dependabot/*",
-      "renovate.json",
-      ".renovate.json",
-      ".renovaterc*",
-      "package-lock.json",
-      "yarn.lock",
-      "pnpm-lock.yaml",
-      "Gemfile.lock",
-      "poetry.lock"
-    ],
-    "variables": {
-      "fallback_default_runner": "ubuntu-latest"
-    },
+    "variables": {},
     "service_definitions": {
       "common": {
         "mode": "block",
@@ -273,7 +260,8 @@
           "common",
           "lf_line_endings",
           "dotfiles",
-          "markdownlint"
+          "markdownlint",
+          "dependabot_actions"
         ]
       }
     }

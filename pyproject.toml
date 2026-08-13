@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bos-managed-file-sync"
-version = "1.0.0"
+dynamic = ["version"]
 description = "Config-driven managed-file sync — keep canonical repo files and managed blocks in sync across repositories."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -79,6 +79,9 @@ known-first-party = ["sync_kit"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sync_kit"]
+
+[tool.hatch.version]
+path = "src/sync_kit/__init__.py"
 
 [tool.hatch.build.targets.sdist]
 include = [
