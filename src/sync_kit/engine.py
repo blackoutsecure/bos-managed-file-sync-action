@@ -20,6 +20,8 @@ from .markers import (
     apply_block,
     comment_lines,
     comment_prefix_for,
+    find_marker_namespaces,
+    remove_block,
     supports_comments,
 )
 from .paths import normalize_relative_path, resolve_inside, resolve_repo_root
@@ -102,11 +104,13 @@ class SyncEngine:
         variables: dict[str, str] | None = None,
         namespace: str = DEFAULT_NAMESPACE,
         note: str | None = None,
+        take_over_managed_files: bool = False,
     ) -> None:
         self.root = resolve_repo_root(root)
         self.dry_run = dry_run
         self.namespace = namespace
         self.note = note
+        self.take_over_managed_files = take_over_managed_files
         self.variables = builtin_variables(variables)
 
     def sync(self, services: Iterable[Service]) -> SyncResult:
@@ -275,12 +279,13 @@ class SyncEngine:
             desired = _with_final_newline(self._with_header(managed, content))
         else:
             base = current if exists else self._scaffold(managed)
+            base, namespace = self._block_namespace(service.name, managed, base)
             desired = apply_block(
                 base,
                 service.name,
                 content,
                 managed.comment_prefix or comment_prefix_for(managed.path),
-                self.namespace,
+                namespace,
                 self._note_for(managed),
             )
 
@@ -297,6 +302,28 @@ class SyncEngine:
             action="updated" if exists else "created",
             before=current,
             after=desired,
+        )
+
+    def _block_namespace(
+        self,
+        service_name: str,
+        managed: ManagedFile,
+        existing: str,
+    ) -> tuple[str, str]:
+        """Use configured ownership, optionally removing competing blocks."""
+        configured = managed.marker_namespace or self.namespace
+        existing_namespaces = find_marker_namespaces(existing, service_name)
+        competing = existing_namespaces - {configured}
+        if not competing:
+            return existing, configured
+        names = ", ".join(sorted(existing_namespaces))
+        if self.take_over_managed_files:
+            for namespace in sorted(competing):
+                existing = remove_block(existing, service_name, namespace, managed.comment_prefix or comment_prefix_for(managed.path))
+            return existing, configured
+        raise ConfigError(
+            f"block service '{service_name}' has unmanaged marker namespace(s): {names}; "
+            "set marker_namespace explicitly or enable take_over_managed_files"
         )
 
     def _scaffold(self, managed: ManagedFile) -> str:

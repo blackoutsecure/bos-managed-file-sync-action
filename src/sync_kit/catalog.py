@@ -36,6 +36,7 @@ class ManagedFile:
     content: str
     mode: str
     comment_prefix: str | None = None
+    marker_namespace: str | None = None
     # Written once, before the first block, when a block-mode file is created.
     scaffold: str | None = None
 
@@ -149,12 +150,19 @@ def parse_service(
                 raise ConfigError(
                     f"service '{name}' file '{path}' has an invalid comment_prefix"
                 )
+        marker_namespace = entry.get("marker_namespace")
+        if marker_namespace is not None:
+            marker_namespace = marker_identifier(
+                marker_namespace,
+                f"service '{name}' file '{path}' marker_namespace",
+            )
         files.append(
             ManagedFile(
                 path=path,
                 content="" if file_mode == "absent" else _read_content(entry, base_dirs),
                 mode=file_mode,
                 comment_prefix=comment_prefix,
+                marker_namespace=marker_namespace,
                 scaffold=None if scaffold is None else str(scaffold),
             )
         )

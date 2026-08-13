@@ -28,6 +28,7 @@ from .config import (
     parse_service_list,
     string_map,
     sync_direction,
+    take_over_managed_files,
 )
 from .engine import FileResult, SyncEngine, SyncResult
 from .errors import ConfigError, SyncKitError
@@ -141,6 +142,7 @@ class _Plan:
         )
         self.services = resolve_services(self.catalog, self.section, parse_service_list(args.services))
         self.namespace = marker_namespace(self.section)
+        self.take_over_managed_files = take_over_managed_files(self.section)
         self.note = managed_note(self.section)
         self.variables = string_map(self.section.get("variables"))
 
@@ -230,6 +232,7 @@ def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
 
     review_rows = [
         ("use_marketplace_config", plan.section.get("use_marketplace_config", True)),
+        ("take_over_managed_files", plan.take_over_managed_files),
         ("security.enable_python_lint", security.get("enable_python_lint")),
         ("security.python_version", security.get("python_version")),
         ("marketplace.enabled", marketplace.get("enabled", False)),
@@ -261,6 +264,14 @@ def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
         recommendations.append(f"Excluded services are intentionally skipped: {serialize(excluded)}.")
     if disabled:
         recommendations.append(f"Disabled services are explicitly filtered out: {serialize(disabled)}.")
+    if plan.take_over_managed_files:
+        recommendations.append(
+            "Managed-file takeover is enabled; competing block sections may be removed during apply."
+        )
+    else:
+        recommendations.append(
+            "Managed-file takeover is disabled; competing block namespaces fail safely and require explicit ownership configuration."
+        )
     if not recommendations:
         recommendations.append("No extra policy overrides are configured; the repo is using the default marketplace baseline.")
 
@@ -295,6 +306,7 @@ def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
         f"root: {escaped(plan.root)}",
         f"direction: {escaped(plan.direction)}",
         f"namespace: {escaped(plan.namespace)}",
+        f"take_over_managed_files: {'true' if plan.take_over_managed_files else 'false'}",
         f"services: {escaped(', '.join(service.name for service in plan.services) if plan.services else '(none)')}",
         f"mode: {'dry-run' if result.dry_run else 'apply'}",
         "</pre>",
@@ -334,6 +346,7 @@ def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
             f"| Global config | <code>{escaped(plan.global_config_file or '(none)')}</code> |",
             f"| Direction | <code>{escaped(plan.direction)}</code> |",
             f"| Marker namespace | <code>{escaped(plan.namespace)}</code> |",
+            f"| Take over managed files | <code>{'enabled' if plan.take_over_managed_files else 'disabled'}</code> |",
             f"| Allowlist paths | <code>{escaped(serialize(allowlist))}</code> |",
             f"| Blocked paths | <code>{escaped(serialize(blocked))}</code> |",
             f"| Required paths | <code>{escaped(serialize(required))}</code> |",
@@ -348,6 +361,29 @@ def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
     )
     for field, value in review_rows:
         lines.append(f"| <code>{escaped(field)}</code> | <code>{escaped(serialize(value))}</code> |")
+
+    block_rows = [
+        (service.name, managed.path, managed.mode, managed.marker_namespace or plan.namespace)
+        for service in plan.services
+        for managed in service.files
+        if managed.mode == "block"
+    ]
+    if block_rows:
+        lines.extend(
+            [
+                "",
+                "### Block policy",
+                "",
+                "| Service | File | Mode | Namespace | Takeover |",
+                "| --- | --- | --- | --- | --- |",
+            ]
+        )
+        for service, path, mode, namespace in block_rows:
+            lines.append(
+                f"| <code>{escaped(service)}</code> | <code>{escaped(path)}</code> | "
+                f"<code>{escaped(mode)}</code> | <code>{escaped(namespace)}</code> | "
+                f"{'enabled' if plan.take_over_managed_files else 'disabled'} |"
+            )
 
     lines.extend([
         "",
@@ -440,6 +476,7 @@ def _run_sync(plan: _Plan, dry_run: bool, fail_on_drift: bool, show_diff: bool =
         variables=plan.variables,
         namespace=plan.namespace,
         note=plan.note,
+        take_over_managed_files=plan.take_over_managed_files,
     )
     result = engine.sync(plan.services)
 
