@@ -1,5 +1,5 @@
 # >>> managed-file-sync:shellcheck >>>
-# Managed by Blackout Secure. Best practices applied via marketplace config, customized in .github/blackout-secure-managed-file-sync-global-config.json and .github/bos-universal-config.json.
+# Managed by Blackout Secure Managed File Sync — configure services in .github/bos-universal-config.json.
 shell=bash
 external-sources=true
 enable=quote-safe-variables

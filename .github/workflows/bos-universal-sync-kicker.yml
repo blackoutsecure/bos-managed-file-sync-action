@@ -1,11 +1,11 @@
-# Managed by Blackout Secure. Best practices applied via marketplace config, customized in .github/blackout-secure-managed-file-sync-global-config.json and .github/bos-universal-config.json.
+# Managed by Blackout Secure Managed File Sync — configure services in .github/bos-universal-config.json.
 # Do not edit — every sync run overwrites this file.
-# Blackout Secure universal sync kicker (hub-managed).
-# Customize via `.github/bos-universal-config.json`, not this file.
+# Blackout Secure managed file sync kicker (hub-managed).
+# Customize via `bos-universal-config.json`, not this file.
 # Schema docs: https://github.com/blackoutsecure/bos-automation-hub
-name: Blackout Secure universal sync (kicker)
+name: Blackout Secure managed file sync (kicker)
 run-name: >-
-  Blackout Secure universal sync / ${{
+  Blackout Secure managed file sync / ${{
     github.event_name == 'workflow_dispatch'
       && format('manual ({0})', inputs.mode)
       || github.event_name == 'schedule'
@@ -18,7 +18,7 @@ run-name: >-
     - cron: '29 14 * * 1'
   push:
     paths:
-      - '.github/bos-universal-config.json'
+      - 'bos-universal-config.json'
   workflow_dispatch:
     inputs:
       mode:

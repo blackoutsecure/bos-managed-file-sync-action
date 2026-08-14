@@ -16,7 +16,7 @@ version: 2
 updates:
 
 # >>> managed-file-sync:dependabot_actions >>>
-# Managed by Blackout Secure. Best practices applied via marketplace config, customized in .github/blackout-secure-managed-file-sync-global-config.json and .github/bos-universal-config.json.
+# Managed by Blackout Secure Managed File Sync — configure services in .github/bos-universal-config.json.
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
@@ -28,7 +28,7 @@ updates:
 # <<< managed-file-sync:dependabot_actions <<<
 
 # >>> managed-file-sync:dependabot_pip >>>
-# Managed by Blackout Secure. Best practices applied via marketplace config, customized in .github/blackout-secure-managed-file-sync-global-config.json and .github/bos-universal-config.json.
+# Managed by Blackout Secure Managed File Sync — configure services in .github/bos-universal-config.json.
   - package-ecosystem: pip
     directory: /
     target-branch: dev
