@@ -1,10 +1,9 @@
 {
   "managed_file_sync": {
-    "description": "Blackout Secure marketplace best practices — switchable defaults that can be disabled with use_marketplace_config: false or selectively overridden by global/repo config. Dependency hygiene for workflow pins is enabled by default via dependabot_actions.",
     "direction": "source-to-destination",
     "use_marketplace_config": true,
     "marker_namespace": "managed-file-sync",
-    "managed_note": "Managed by Blackout Secure. Best practices applied via marketplace config, customized in .github/blackout-secure-managed-file-sync-global-config.json and .github/bos-universal-config.json.",
+    "managed_note": "Managed by {{package_title}} — configure services in {{config_source}}.",
     "services": [
       "common",
       "lf_line_endings",
@@ -14,6 +13,11 @@
       "editorconfig"
     ],
     "exclude_services": [],
+    "ai": {
+      "enable_ai_drift_summary": true,
+      "ai_drift_summary_provider": "auto",
+      "local_heuristic_fallback": true
+    },
     "variables": {
       "fallback_default_runner": "ubuntu-latest"
     },

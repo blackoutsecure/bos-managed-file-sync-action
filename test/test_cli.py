@@ -516,3 +516,30 @@ def test_configured_managed_files_path_is_used_without_cli_override(repo):
 
     assert main(["apply", "--root", str(repo.root)]) == EXIT_OK
     assert repo.read("MANAGED.txt").endswith("configured-template\n")
+
+
+def test_validate_reports_package_identity_and_ignored_keys(repo, capsys):
+    repo.write_config({"name": "evil-kit", "version": "9.9.9", "services": ["common"]})
+
+    assert main(["validate", "--root", str(repo.root)]) == EXIT_OK
+
+    output = capsys.readouterr().out
+    assert "name:        bos-managed-file-sync" in output
+    assert "9.9.9" not in output
+    assert "Ignored reserved package metadata keys: name, version" in output
+    assert "Config cascade:" in output
+
+
+def test_summary_reports_package_and_drift_without_ai(repo, tmp_path, monkeypatch):
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_MODELS_TOKEN", raising=False)
+    repo.write_config({"services": ["common"], "ai": {"enable_ai_drift_summary": False}})
+
+    assert main(["apply", "--root", str(repo.root), "--dry-run"]) == EXIT_OK
+
+    written = summary.read_text(encoding="utf-8")
+    assert "### Package" in written
+    assert "bos-managed-file-sync" in written
+    assert "### Drift summary (local)" in written

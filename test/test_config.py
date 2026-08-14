@@ -7,6 +7,7 @@ import json
 import pytest
 
 from sync_kit.config import (
+    ai_settings,
     builtin_variables,
     find_config,
     load_repo_config,
@@ -571,3 +572,57 @@ def test_exclude_services_must_be_list(repo):
     )
     with pytest.raises(ConfigError):
         load_repo_config(repo_path, use_marketplace=True)
+
+
+def test_package_metadata_keys_are_stripped_from_every_tier(repo):
+    global_path = repo.write(
+        ".github/blackout-secure-managed-file-sync-global-config.json",
+        json.dumps({"managed_file_sync": {"author": "someone-else", "services": ["common"]}}),
+    )
+    repo_path = repo.write(
+        "bos-universal-config.json",
+        json.dumps({"managed_file_sync": {"name": "other-kit", "version": "9.9.9"}}),
+    )
+    ignored: list[str] = []
+    config = load_repo_config(
+        repo_path,
+        global_path,
+        use_marketplace=True,
+        config_json=json.dumps({"managed_file_sync": {"description": "hijacked"}}),
+        ignored_metadata_keys=ignored,
+    )
+
+    assert not {"name", "version", "author", "description"} & set(config)
+    assert sorted(ignored) == ["author", "description", "name", "version"]
+    # Service descriptions are policy, not package identity, so they survive.
+    assert config["service_definitions"]["common"]["description"]
+
+
+def test_ai_settings_come_from_the_marketplace_baseline(repo):
+    config = load_repo_config(use_marketplace=True)
+    assert ai_settings(config).enable_ai_drift_summary is True
+
+
+def test_repo_config_can_disable_ai(repo):
+    repo_path = repo.write(
+        "bos-universal-config.json",
+        json.dumps({"managed_file_sync": {"ai": {"enable_ai_drift_summary": False}}}),
+    )
+    config = load_repo_config(repo_path, use_marketplace=True)
+    settings = ai_settings(config)
+    assert settings.enable_ai_drift_summary is False
+    assert settings.ai_drift_summary_provider == "auto"
+
+
+def test_package_identity_variables_cannot_be_overridden():
+    variables = builtin_variables({"package_name": "evil", "package_title": "Evil", "package_version": "9.9.9"})
+    assert variables["package_name"] == "bos-managed-file-sync"
+    assert variables["package_title"] == "Blackout Secure Managed File Sync"
+    assert variables["package_version"] != "9.9.9"
+
+
+def test_config_source_variable_defaults_to_the_marketplace_file():
+    assert builtin_variables()["config_source"] == "managed-file-sync-marketplace-config.json"
+    assert builtin_variables(config_source=".github/bos-universal-config.json")["config_source"] == (
+        ".github/bos-universal-config.json"
+    )

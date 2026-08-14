@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from sync_kit import __version__
+from sync_kit import __version__, metadata
 from sync_kit.catalog import load_catalog, resolve_services
 from sync_kit.config import load_repo_config
 
@@ -248,3 +248,25 @@ def test_codeql_caller_avoids_duplicate_pull_request_scanner():
     assert "workflows/security-scan.yml@main" in workflow
     assert "enable_kit_composite: ${{ github.event_name != 'pull_request' }}" in workflow
     assert "codeql_languages: '[\"python\", \"actions\"]'" in workflow
+
+
+def test_package_constants_match_pyproject():
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    name = re.search(r'^name = "([^"]+)"', pyproject, re.MULTILINE)
+    author = re.search(r'^authors = \[\{name = "([^"]+)"\}\]', pyproject, re.MULTILINE)
+    description = re.search(r'^description = "([^"]+)"', pyproject, re.MULTILINE)
+
+    assert name is not None and author is not None and description is not None
+    assert name.group(1) == metadata.PACKAGE_NAME
+    assert author.group(1) == metadata.PACKAGE_AUTHOR
+    assert description.group(1) == metadata.PACKAGE_DESCRIPTION
+
+
+def test_marketplace_config_declares_no_package_metadata():
+    section = load_repo_config(use_marketplace=True)
+    assert not set(section) & set(metadata.RESERVED_METADATA_KEYS)
+
+
+def test_package_title_matches_action_name():
+    action = (ROOT / "action.yml").read_text(encoding="utf-8")
+    assert _yaml_scalar(action, "name") == metadata.PACKAGE_TITLE

@@ -81,7 +81,7 @@ known-first-party = ["sync_kit"]
 packages = ["src/sync_kit"]
 
 [tool.hatch.version]
-path = "src/sync_kit/__init__.py"
+path = "src/sync_kit/_version.py"
 
 [tool.hatch.build.targets.sdist]
 include = [
