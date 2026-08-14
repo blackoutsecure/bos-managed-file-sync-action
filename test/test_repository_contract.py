@@ -124,11 +124,9 @@ def test_repo_selects_required_opt_in_hub_kickers():
     ]
 
 
-def test_legacy_root_config_matches_canonical_config():
-    canonical = _json(GITHUB / "bos-universal-config.json")
-    legacy = _json(ROOT / "bos-universal-config.json")
-
-    assert legacy == canonical
+def test_repository_has_only_canonical_universal_config():
+    assert (GITHUB / "bos-universal-config.json").is_file()
+    assert not (ROOT / "bos-universal-config.json").exists()
 
 
 def test_universal_marketplace_publication_contract():

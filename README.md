@@ -617,10 +617,11 @@ repository contracts fail if they drift. The same bundle carries recommended
 `security`, `marketplace`, and `general.action_test` defaults. A repository's
 top-level companion sections override them in this action's config cascade.
 
-External hub workflows that parse `bos-universal-config.json` directly do not
-load this package resource. Keep any top-level security gates, publication paths,
-metadata, and action-test matrix required by those workflows in the universal
-config; they are separate consumer overrides, not redundant sync settings.
+External hub workflows that parse `.github/bos-universal-config.json` directly
+do not load this package resource. Keep any top-level security gates, publication
+paths, metadata, and action-test matrix required by those workflows in the
+universal config; they are separate consumer overrides, not redundant sync
+settings.
 
 ### AI settings
 
