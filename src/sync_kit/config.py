@@ -23,6 +23,7 @@ from .metadata import package_metadata, strip_package_metadata
 
 CONFIG_SECTION = "managed_file_sync"
 MARKETPLACE_CONFIG_FILE = "managed-file-sync-marketplace-config.json"
+COMPANION_CONFIG_SECTIONS = ("security", "marketplace", "general")
 DEFAULT_CONFIG_PATHS = (
     ".github/bos-universal-config.json",
     "bos-universal-config.json",
@@ -157,10 +158,37 @@ def _load_config_section(config_file: Path | None) -> dict[str, Any]:
     data = load_json(config_file)
     if not isinstance(data, dict):
         raise ConfigError(f"config root must be a JSON object: {config_file}")
+    return _extract_config_section(data, source=str(config_file))
+
+
+def _extract_config_section(data: dict[str, Any], *, source: str) -> dict[str, Any]:
+    """Return managed-sync policy plus universal companion sections.
+
+    Universal config keeps security, Marketplace publication, and general
+    action-test policy beside ``managed_file_sync``. Those sections do not
+    control file reconciliation, but retaining them in the cascade lets the
+    bundled tier provide recommendations and the run report show effective
+    repository overrides. Top-level universal sections win over same-tier
+    nested values, matching the hub's universal-config precedence.
+    """
     section = data.get(CONFIG_SECTION, data)
     if not isinstance(section, dict):
-        raise ConfigError(f"'{CONFIG_SECTION}' must be a JSON object: {config_file}")
-    return section
+        raise ConfigError(f"'{CONFIG_SECTION}' must be a JSON object: {source}")
+    if CONFIG_SECTION not in data:
+        return section
+
+    merged = dict(section)
+    for name in COMPANION_CONFIG_SECTIONS:
+        companion = data.get(name)
+        if companion is None:
+            continue
+        if not isinstance(companion, dict):
+            raise ConfigError(f"'{name}' must be a JSON object: {source}")
+        nested = merged.get(name)
+        if nested is not None and not isinstance(nested, dict):
+            raise ConfigError(f"'{CONFIG_SECTION}.{name}' must be a JSON object: {source}")
+        merged[name] = _deep_merge(nested or {}, companion)
+    return merged
 
 
 def load_inline_config(raw: str | dict[str, Any] | None) -> dict[str, Any]:
@@ -180,10 +208,7 @@ def load_inline_config(raw: str | dict[str, Any] | None) -> dict[str, Any]:
             raise ConfigError(f"invalid inline config JSON: {exc}") from exc
     if not isinstance(data, dict):
         raise ConfigError("inline config JSON must decode to an object")
-    section = data.get(CONFIG_SECTION, data)
-    if not isinstance(section, dict):
-        raise ConfigError("'managed_file_sync' must be a JSON object in the inline config")
-    return section
+    return _extract_config_section(data, source="inline config")
 
 
 def _load_bundled_config(path: str, *, label: str) -> dict[str, Any]:
@@ -194,10 +219,9 @@ def _load_bundled_config(path: str, *, label: str) -> dict[str, Any]:
             files.joinpath(path).read_text(encoding="utf-8")
         )
 
-        section = config_data.get(CONFIG_SECTION, config_data)
-        if not isinstance(section, dict):
-            raise ConfigError(f"{label} config must contain a 'managed_file_sync' object")
-        return section
+        if not isinstance(config_data, dict):
+            raise ConfigError(f"{label} config root must be a JSON object")
+        return _extract_config_section(config_data, source=f"{label} config")
     except Exception as exc:
         raise ConfigError(f"failed to load {label} config: {exc}") from exc
 

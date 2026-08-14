@@ -320,6 +320,84 @@ def test_marketplace_config_is_loaded_by_default():
     assert "exclude_paths" not in config
 
 
+def test_marketplace_config_includes_recommended_toolchain_and_policy():
+    config = load_repo_config(None, use_marketplace=True)
+    expected_packages = ["pytest>=8.0", "ruff>=0.6", "PyYAML>=6.0"]
+
+    assert config["recommended_toolchain"] == {
+        "advisory": True,
+        "python": {
+            "requires": ">=3.10",
+            "default_version": "3.12",
+            "tested_versions": ["3.10", "3.11", "3.12"],
+        },
+        "dependencies": {
+            "build": ["hatchling>=1.27"],
+            "runtime": [],
+            "development": expected_packages,
+        },
+    }
+    assert config["security"] == {
+        "enable_lint": True,
+        "enable_node_lint": False,
+        "node_version": "20",
+        "enable_python_lint": True,
+        "python_version": "3.12",
+        "python_packages": expected_packages,
+        "enable_shell_lint": False,
+        "enable_dependency_review": True,
+        "enable_code_scan": True,
+        "enable_pinned_actions_check": True,
+        "enable_pr_title_check": True,
+        "pr_title_types": "feat,fix,docs,style,refactor,perf,test,build,ci,chore,revert",
+        "enable_readme_header_check": True,
+        "readme_header_profile": "marketplace",
+        "code_scan_fail_on": "fail",
+        "code_scan_http_timeout": "20",
+    }
+    assert config["general"]["action_test"] == {
+        "python_versions": ["3.10", "3.11", "3.12"],
+        "os_matrix": ["ubuntu-latest"],
+        "python_packages": expected_packages,
+        "pytest_args": "-q",
+        "enable_smoke_test": False,
+        "smoke_trigger": "push-dev",
+        "smoke_test_config": {},
+        "timeout_pytest": 10,
+        "timeout_smoke": 5,
+    }
+    assert config["marketplace"]["target_branch"] == "main"
+    assert config["marketplace"]["include_dependabot_config"] is True
+    assert config["marketplace"]["include_github_metadata"] is False
+
+
+def test_top_level_universal_sections_override_marketplace_recommendations(repo):
+    repo_path = repo.write(
+        "bos-universal-config.json",
+        json.dumps(
+            {
+                "managed_file_sync": {"services": ["common"]},
+                "security": {"python_version": "3.11"},
+                "general": {"action_test": {"pytest_args": "-q -x"}},
+                "marketplace": {"target_branch": "stable"},
+            }
+        ),
+    )
+
+    config = load_repo_config(repo_path, use_marketplace=True)
+
+    assert config["security"]["python_version"] == "3.11"
+    assert config["security"]["enable_python_lint"] is True
+    assert config["general"]["action_test"]["pytest_args"] == "-q -x"
+    assert config["general"]["action_test"]["python_versions"] == [
+        "3.10",
+        "3.11",
+        "3.12",
+    ]
+    assert config["marketplace"]["target_branch"] == "stable"
+    assert config["marketplace"]["include_dependabot_config"] is True
+
+
 def test_marketplace_config_can_be_disabled():
     """use_marketplace_config: false should disable marketplace tier."""
     config = load_repo_config(None, use_marketplace=False)
@@ -600,7 +678,9 @@ def test_package_metadata_keys_are_stripped_from_every_tier(repo):
 
 def test_ai_settings_come_from_the_marketplace_baseline(repo):
     config = load_repo_config(use_marketplace=True)
-    assert ai_settings(config).enable_ai_drift_summary is True
+    settings = ai_settings(config)
+    assert settings.enable_ai_drift_summary is True
+    assert settings.enable_ai_error_remediation is True
 
 
 def test_repo_config_can_disable_ai(repo):
@@ -612,6 +692,7 @@ def test_repo_config_can_disable_ai(repo):
     settings = ai_settings(config)
     assert settings.enable_ai_drift_summary is False
     assert settings.ai_drift_summary_provider == "auto"
+    assert settings.enable_ai_error_remediation is False
 
 
 def test_package_identity_variables_cannot_be_overridden():

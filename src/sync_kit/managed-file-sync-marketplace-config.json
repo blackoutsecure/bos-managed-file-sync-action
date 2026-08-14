@@ -2,8 +2,42 @@
   "managed_file_sync": {
     "direction": "source-to-destination",
     "use_marketplace_config": true,
+    "use_marketplace_services": true,
     "marker_namespace": "managed-file-sync",
     "managed_note": "Managed by {{package_title}} — configure services in {{config_source}}.",
+    "managed_files_path": ".github/managed-files",
+    "take_over_managed_files": false,
+    "mode": "commit",
+    "generate_commit_message": true,
+    "fallback_commit_message": "chore: sync managed files from bos-automation-hub",
+    "git_user_name": "github-actions[bot]",
+    "git_user_email": "41898282+github-actions[bot]@users.noreply.github.com",
+    "push_retries": 3,
+    "runs_on": "ubuntu-latest",
+    "timeout_minutes": 5,
+    "recommended_toolchain": {
+      "advisory": true,
+      "python": {
+        "requires": ">=3.10",
+        "default_version": "3.12",
+        "tested_versions": [
+          "3.10",
+          "3.11",
+          "3.12"
+        ]
+      },
+      "dependencies": {
+        "build": [
+          "hatchling>=1.27"
+        ],
+        "runtime": [],
+        "development": [
+          "pytest>=8.0",
+          "ruff>=0.6",
+          "PyYAML>=6.0"
+        ]
+      }
+    },
     "services": [
       "common",
       "lf_line_endings",
@@ -13,9 +47,12 @@
       "editorconfig"
     ],
     "exclude_services": [],
+    "disabled_services": [],
     "ai": {
       "enable_ai_drift_summary": true,
       "ai_drift_summary_provider": "auto",
+      "enable_ai_error_remediation": true,
+      "ai_error_remediation_provider": "auto",
       "local_heuristic_fallback": true
     },
     "variables": {
@@ -235,6 +272,100 @@
           "prettier"
         ]
       }
+    }
+  },
+  "security": {
+    "enable_lint": true,
+    "enable_node_lint": false,
+    "node_version": "20",
+    "enable_python_lint": true,
+    "python_version": "3.12",
+    "python_packages": [
+      "pytest>=8.0",
+      "ruff>=0.6",
+      "PyYAML>=6.0"
+    ],
+    "enable_shell_lint": false,
+    "enable_dependency_review": true,
+    "enable_code_scan": true,
+    "enable_pinned_actions_check": true,
+    "enable_pr_title_check": true,
+    "pr_title_types": "feat,fix,docs,style,refactor,perf,test,build,ci,chore,revert",
+    "enable_readme_header_check": true,
+    "readme_header_profile": "marketplace",
+    "code_scan_fail_on": "fail",
+    "code_scan_http_timeout": "20"
+  },
+  "marketplace": {
+    "enabled": true,
+    "action_yml_path": "action.yml",
+    "target_branch": "main",
+    "fail_on_warning": false,
+    "require_security": "warn",
+    "require_code_of_conduct": "warn",
+    "require_contributing": "warn",
+    "run_branding_preview": true,
+    "allowlist_paths": [
+      "action.yml",
+      "README.md",
+      "LICENSE",
+      "NOTICE",
+      "src"
+    ],
+    "blocked_paths": [
+      ".github/workflows/",
+      ".editorconfig",
+      ".gitattributes",
+      ".gitignore",
+      ".markdownlint.yaml",
+      ".shellcheckrc",
+      "pyproject.toml",
+      "scripts/",
+      "test/"
+    ],
+    "required_paths": [
+      ".github/dependabot.yml",
+      "action.yml",
+      "src",
+      "README.md",
+      "LICENSE",
+      "NOTICE"
+    ],
+    "extra_sync_paths": [],
+    "include_dependabot_config": true,
+    "include_github_metadata": false,
+    "repo_metadata": {
+      "enable": false,
+      "generate_topics": true,
+      "ai_enabled": true,
+      "ai_model": "openai/gpt-4o-mini",
+      "show_releases": true,
+      "show_deployments": false,
+      "show_packages": false,
+      "dry_run": false
+    }
+  },
+  "general": {
+    "action_test": {
+      "python_versions": [
+        "3.10",
+        "3.11",
+        "3.12"
+      ],
+      "os_matrix": [
+        "ubuntu-latest"
+      ],
+      "python_packages": [
+        "pytest>=8.0",
+        "ruff>=0.6",
+        "PyYAML>=6.0"
+      ],
+      "pytest_args": "-q",
+      "enable_smoke_test": false,
+      "smoke_trigger": "push-dev",
+      "smoke_test_config": {},
+      "timeout_pytest": 10,
+      "timeout_smoke": 5
     }
   }
 }

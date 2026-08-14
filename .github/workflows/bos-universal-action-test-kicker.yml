@@ -53,7 +53,7 @@ jobs:
     if: needs.parse_config.outputs.target_ref == 'dev'
     permissions:
       contents: read
-    uses: blackoutsecure/bos-automation-hub/.github/workflows/bos-universal-action-test.yml@dev
+    uses: blackoutsecure/bos-automation-hub/.github/workflows/bos-universal-action-test.yml@main
 
   action-test-main:
     name: action-test (main)

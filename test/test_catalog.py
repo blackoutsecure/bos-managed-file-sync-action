@@ -305,13 +305,26 @@ def test_wildcard_selects_every_file_service(repo):
     assert len(resolve_services(catalog, {"services": ["*"]})) == len(concrete)
 
 
-def test_unknown_service_raises(repo):
-    with pytest.raises(ConfigError):
-        resolve_services(load_catalog(repo.root), {"services": ["does_not_exist"]})
+def test_unknown_services_report_missing_definition_schema_paths(repo):
+    with pytest.raises(ConfigError) as exc_info:
+        resolve_services(
+            load_catalog(repo.root),
+            {"services": ["missing_kicker", "missing_policy"]},
+        )
+
+    message = str(exc_info.value)
+    assert "missing service definition schema(s)" in message
+    assert "managed_file_sync.service_definitions.missing_kicker" in message
+    assert "managed_file_sync.service_definitions.missing_policy" in message
+    assert "managed_file_sync.services" in message
+    assert "Available service definitions:" in message
 
 
 def test_removed_dotfiles_service_name_is_unknown(repo):
-    with pytest.raises(ConfigError, match="unknown service"):
+    with pytest.raises(
+        ConfigError,
+        match=r"managed_file_sync\.service_definitions\.dotfiles",
+    ):
         resolve_services(load_catalog(repo.root), {"services": ["dotfiles"]})
 
 

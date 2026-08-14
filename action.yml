@@ -121,6 +121,7 @@ runs:
         MFS_DRY_RUN:             ${{ inputs.dry_run }}
         MFS_FAIL_ON_DRIFT:       ${{ inputs.fail_on_drift }}
         MFS_SHOW_DIFF:           ${{ inputs.show_diff }}
+        GITHUB_TOKEN:            ${{ github.token }}
       run: |
         set -euo pipefail
 

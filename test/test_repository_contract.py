@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
@@ -19,6 +20,22 @@ GITHUB = ROOT / ".github"
 
 def _json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _toml_value(document: str, section: str, key: str):
+    section_match = re.search(
+        rf"^\[{re.escape(section)}\]\s*$\n(?P<body>.*?)(?=^\[|\Z)",
+        document,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert section_match, f"missing TOML section {section!r}"
+    value_match = re.search(
+        rf"^{re.escape(key)}\s*=\s*(?P<value>\[[\s\S]*?\]|\"[^\"]*\")\s*$",
+        section_match.group("body"),
+        re.MULTILINE,
+    )
+    assert value_match, f"missing TOML value {section}.{key}"
+    return ast.literal_eval(value_match.group("value"))
 
 
 def _yaml_scalar(document: str, key: str, *, indent: int = 0) -> str:
@@ -107,11 +124,11 @@ def test_repo_selects_required_opt_in_hub_kickers():
     ]
 
 
-def test_legacy_root_config_matches_canonical_sync_config():
+def test_legacy_root_config_matches_canonical_config():
     canonical = _json(GITHUB / "bos-universal-config.json")
     legacy = _json(ROOT / "bos-universal-config.json")
 
-    assert legacy == {"managed_file_sync": canonical["managed_file_sync"]}
+    assert legacy == canonical
 
 
 def test_universal_marketplace_publication_contract():
@@ -140,10 +157,42 @@ def test_universal_marketplace_publication_contract():
     }
 
 
+def test_marketplace_recommendations_match_project_toolchain():
+    config = load_repo_config(None)
+    toolchain = config["recommended_toolchain"]
+    python = toolchain["python"]
+    dependencies = toolchain["dependencies"]
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    action = (ROOT / "action.yml").read_text(encoding="utf-8")
+
+    assert toolchain["advisory"] is True
+    assert python["requires"] == _toml_value(pyproject, "project", "requires-python")
+    assert dependencies["build"] == _toml_value(pyproject, "build-system", "requires")
+    assert dependencies["runtime"] == _toml_value(pyproject, "project", "dependencies")
+    assert dependencies["development"] == _toml_value(
+        pyproject,
+        "project.optional-dependencies",
+        "dev",
+    )
+    assert config["security"]["python_version"] == python["default_version"]
+    assert config["security"]["python_packages"] == dependencies["development"]
+    assert config["general"]["action_test"]["python_versions"] == python["tested_versions"]
+    assert config["general"]["action_test"]["python_packages"] == dependencies["development"]
+
+    python_input = re.search(
+        r"^  python_version:\s*$\n(?P<body>(?:    .*\n)+)",
+        action,
+        re.MULTILINE,
+    )
+    assert python_input
+    assert _yaml_scalar(python_input.group("body"), "default", indent=4) == python["default_version"]
+
+
 def test_composite_action_runs_isolated_bundled_source_without_installing():
     action = (ROOT / "action.yml").read_text(encoding="utf-8")
 
     assert 'python3 -I "${GITHUB_ACTION_PATH}/src/sync_kit/_bootstrap.py" apply' in action
+    assert "GITHUB_TOKEN:            ${{ github.token }}" in action
     assert "PYTHONPATH=" not in action
     assert "pip install" not in action
     assert "python3 -m pip" not in action
@@ -223,13 +272,13 @@ def test_security_kicker_routes_dev_and_main_with_required_permissions():
     assert workflow.count("secrets: inherit") == 2
 
 
-def test_action_test_kicker_routes_dev_and_main_read_only():
+def test_action_test_kicker_uses_stable_hub_workflow_read_only():
     workflow = (
         GITHUB / "workflows/bos-universal-action-test-kicker.yml"
     ).read_text(encoding="utf-8")
 
-    assert "workflows/bos-universal-action-test.yml@dev" in workflow
-    assert "workflows/bos-universal-action-test.yml@main" in workflow
+    assert workflow.count("workflows/bos-universal-action-test.yml@main") == 2
+    assert "workflows/bos-universal-action-test.yml@dev" not in workflow
     assert "contents: write" not in workflow
     assert "secrets:" not in workflow
 
