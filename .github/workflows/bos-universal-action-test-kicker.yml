@@ -1,7 +1,7 @@
-# Managed by Blackout Secure. Best practices applied via marketplace config, customized in .github/blackout-secure-managed-file-sync-global-config.json and .github/bos-universal-config.json.
+# Managed by Blackout Secure Managed File Sync — configure services in .github/bos-universal-config.json.
 # Do not edit — every sync run overwrites this file.
 # Blackout Secure universal action test kicker (hub-managed).
-# Customize via `.github/bos-universal-config.json`, not this file.
+# Customize via `bos-universal-config.json`, not this file.
 # Schema docs: https://github.com/blackoutsecure/bos-automation-hub
 name: Blackout Secure Universal Action Test
 run-name: >-
@@ -53,7 +53,7 @@ jobs:
     if: needs.parse_config.outputs.target_ref == 'dev'
     permissions:
       contents: read
-    uses: blackoutsecure/bos-automation-hub/.github/workflows/bos-universal-action-test.yml@main
+    uses: blackoutsecure/bos-automation-hub/.github/workflows/bos-universal-action-test.yml@dev
 
   action-test-main:
     name: action-test (main)
