@@ -107,6 +107,13 @@ def test_repo_selects_required_opt_in_hub_kickers():
     ]
 
 
+def test_legacy_root_config_matches_canonical_sync_config():
+    canonical = _json(GITHUB / "bos-universal-config.json")
+    legacy = _json(ROOT / "bos-universal-config.json")
+
+    assert legacy == {"managed_file_sync": canonical["managed_file_sync"]}
+
+
 def test_universal_marketplace_publication_contract():
     config = _json(GITHUB / "bos-universal-config.json")
     marketplace = config["marketplace"]
