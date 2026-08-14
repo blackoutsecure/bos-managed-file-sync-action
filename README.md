@@ -7,61 +7,90 @@ Copyright © 2025-2026 Blackout Secure | Apache License 2.0
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Made by BlackoutSecure](https://img.shields.io/badge/made%20by-BlackoutSecure-1f1f1f)](https://github.com/blackoutsecure)
 
-A drop-in composite GitHub Action that **reads JSON config → resolves a service
-registry → reconciles your repo's managed files → reports or fixes drift**.
+A drop-in composite GitHub Action that reads JSON config → resolves a service
+registry → reconciles your repository's managed files → reports or fixes drift.
 
-Synchronization is deliberately one-way. The merged catalog, service
-definitions, and templates are the **source**; the checked-out repository is
-the **destination**. `managed_file_sync.direction` defaults to
-`source-to-destination`, which is the only supported value. Reverse and
-bidirectional sync fail validation before any file is changed.
+Everything in one Marketplace install: canonical configuration files, managed
+blocks inside files you also hand-edit, init-if-missing scaffolding, dry-run
+previews, and a CI drift gate. Marketplace defaults are vendor neutral, and any
+repo or org extends them with its own services — no fork required.
 
-Everything in one Marketplace install: canonical configuration files, managed blocks
-inside files you also hand-edit, init-if-missing scaffolding, dry-run
-previews, and a CI drift gate. Marketplace defaults are vendor neutral, and
-any repo or org can extend them with its own services — no fork required.
-
-## Start here
-
-| Goal | Go to |
-| --- | --- |
-| Install the action | [Quick start](#quick-start-) |
-| Check for drift in pull requests | [Drift check](#drift-check-on-pull-requests) |
-| Choose a release reference | [Version pinning](#version-pinning) |
-| Understand configuration inheritance | [Configuration layering](#-configuration-inheritance-and-layering) |
-| Define or override services | [Config schema](#-config-schema) |
-| Choose file behavior | [File modes](#file-modes) |
-| Run locally | [Local CLI usage](#-local-usage-cli) |
+Sync is deliberately one-way. The merged catalog, service definitions, and
+templates are the **source**; the checked-out repository is the
+**destination**. `direction` defaults to `source-to-destination`, the only
+supported value; reverse and bidirectional sync fail validation before any file
+is touched.
 
 ## ✨ Features
 
-- **Five sync modes** — `block` rewrites only the region between markers in a
+- **Five file modes** — `block` rewrites only the region between markers in a
   file you otherwise own, `file` overwrites a canonical file wholesale, `init`
-  creates a file only when it is absent and never touches it again, `update`
-  overwrites only an existing file, and `absent` retires a file that a service
-  no longer manages.
+  creates a file only when it is absent, `update` overwrites only an existing
+  file, and `absent` retires a file from the managed set.
 - **Managed blocks** — canonical content lives between
   `>>> managed-file-sync:<service> >>>` and `<<< managed-file-sync:<service> <<<`
-  markers, written with the comment syntax of the target file type. The marker
-  namespace is configurable, so the action can also manage blocks written by
-  another tool.
-- **Config-driven service registry** — services are pure data. The built-in
-  marketplace registry covers common services; repos extend or override it via
-  `service_definitions`.
-- **Dry run + drift gate** — `dry_run` previews changes without writing;
-  `fail_on_drift` turns the preview into a CI gate that fails with an exact
-  list of out-of-sync files. Every change is reported as a unified diff in the
-  job log, so a review needs no local checkout.
+  markers, written with the comment syntax of the target file type. The
+  namespace is configurable, so the action can adopt blocks written by another
+  tool.
+- **Config-driven service registry** — services are pure data. The bundled
+  Marketplace registry covers common hygiene files; orgs and repos extend or
+  override it through `service_definitions`.
+- **Layered config** — bundled Marketplace defaults are deep-merged with an
+  optional organization global config, a repository config, and inline workflow
+  JSON.
 - **Bundles** — a service can `include` other services, so a repo opts into a
   whole standard with one name.
+- **Dry run + drift gate** — `dry_run` previews changes without writing;
+  `fail_on_drift` turns the preview into a CI gate that fails with an exact
+  list of out-of-sync files and a unified diff per file in the job log.
 - **Actionable outputs** — `changed`, `changed_count`, `changed_files`, and
   `changed_files_json` make it trivial to open a pull request only when
   something actually moved.
-- **Job summary** — GitHub Actions runs receive a concise audit of resolved
-  configuration, totals, service-level outcomes, and every managed file.
+- **Job summary** — every run writes package identity, a drift narrative, the
+  resolved configuration, service-level counts, and a file-by-file table.
+- **Independent package metadata** — package identity remains available even
+  when repository policy is absent, overridden, or not loaded, and reserved
+  identity keys are stripped from every config tier.
+- **AI-assisted drift summary** — uses GitHub Models automatically when a usable
+  token is available, supports explicit OpenAI-compatible providers, and always
+  falls back to a deterministic local summary. Disable model calls with
+  `ai.enable_ai_drift_summary: false`.
 - **Pure-stdlib Python core** — no third-party runtime dependency at all. The
-  composite Action invokes its bundled source directly, without a package
-  install or online build step.
+  composite Action invokes its bundled source directly, with no package install
+  or online build step.
+
+## 📖 Table of Contents
+
+- [📋 Prerequisites](#-prerequisites)
+- [🚀 Quick start](#-quick-start)
+  - [Drift check on pull requests](#drift-check-on-pull-requests)
+  - [AI drift summaries and data handling](#ai-drift-summaries-and-data-handling)
+  - [Version pinning](#version-pinning)
+- [⚙️ Action inputs](#️-action-inputs)
+- [📤 Action outputs](#-action-outputs)
+- [📊 Job summary](#-job-summary)
+- [📦 Built-in services](#-built-in-services)
+  - [File modes](#file-modes)
+  - [Service registry](#service-registry)
+  - [Managed blocks](#managed-blocks)
+  - [Services that are deliberately not defaults](#services-that-are-deliberately-not-defaults)
+- [🏗️ Configuration inheritance and layering](#️-configuration-inheritance-and-layering)
+  - [Configuration tiers](#configuration-tiers)
+  - [Merge and precedence rules](#merge-and-precedence-rules)
+  - [Package metadata is not policy](#package-metadata-is-not-policy)
+  - [Examples](#examples)
+- [📝 Config schema reference](#-config-schema-reference)
+  - [Top-level keys](#top-level-keys)
+  - [AI settings](#ai-settings)
+  - [Template variables](#template-variables)
+  - [Environment variables](#environment-variables)
+  - [Service definition fields](#service-definition-fields)
+  - [Managed templates directory](#managed-templates-directory)
+- [⚠️ Runtime and repository notes](#️-runtime-and-repository-notes)
+- [🔐 Security and safety](#-security-and-safety)
+- [💻 Local usage (CLI)](#-local-usage-cli)
+- [🤝 Contributing](#-contributing)
+- [📜 License](#-license)
 
 ## 📋 Prerequisites
 
@@ -69,32 +98,19 @@ any repo or org can extend them with its own services — no fork required.
   Python via `actions/setup-python` automatically.
 - `actions/checkout` before the action runs, so there is a working tree to
   reconcile.
-- For **drift checks**: nothing beyond the default `contents: read`.
-- For **committing fixes**: `contents: write` (and `pull-requests: write` if
-  you open a PR with the changes).
+- For drift checks: nothing beyond the default `contents: read`.
+- For committing fixes: `contents: write`, plus `pull-requests: write` when the
+  workflow opens a PR.
+- Optional for AI drift summaries: `models: read` and a token with GitHub
+  Models access.
 
-## How it works
-
-1. The action loads marketplace, global, repo, and workflow configuration.
-2. It resolves the requested services after applying exclusions and disabled
-  service filters.
-3. It reconciles each managed destination according to its file mode.
-4. It writes outputs, diffs, and a GitHub Job Summary.
-
-| Run type | Writes files | Exit behavior | Best use |
-| --- | --- | --- | --- |
-| Apply | Yes, when changes are needed | `0` normally; `1` with `fail_on_drift` when drift exists; `2` on config error | Scheduled synchronization or a repair workflow. |
-| Dry run | No | `0` unless configuration fails | Preview changes in logs and the Job Summary. |
-| Drift gate | No | `1` when drift exists and `fail_on_drift` is enabled | Pull request validation. |
-
-## Quick start 🚀
+## 🚀 Quick start
 
 Create `.github/bos-universal-config.json` in the destination repository:
 
 ```json
 {
   "managed_file_sync": {
-    "direction": "source-to-destination",
     "services": ["common", "lf_line_endings", "dependabot_actions", "editorconfig"]
   }
 }
@@ -117,6 +133,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      models: read          # optional GitHub Models drift summary
     steps:
       - uses: actions/checkout@v4
 
@@ -131,9 +148,15 @@ jobs:
           branch: chore/managed-file-sync
 ```
 
-That's it. The repo config and conventional optional global config are
+That's it. The repository config and the conventional global config are
 auto-discovered, so the workflow does not repeat config paths. For ad hoc runs,
-the `services` input can still override the configured service list.
+the `services` input overrides the configured service list.
+
+| Run type | Writes files | Exit behavior | Best use |
+| --- | --- | --- | --- |
+| Apply | Yes, when changes are needed | `0` normally, `2` on config error | Scheduled synchronization or a repair workflow. |
+| Dry run | No | `0` unless configuration fails | Preview changes in logs and the job summary. |
+| Drift gate | No | `1` when drift exists with `fail_on_drift` | Pull request validation. |
 
 ### Drift check on pull requests
 
@@ -159,6 +182,29 @@ jobs:
 
 The job fails with a list of out-of-sync files and never writes to the working
 tree.
+
+### AI drift summaries and data handling
+
+AI is enabled in `auto` mode by the bundled Marketplace config and is always
+opportunistic. The action looks for GitHub Models credentials first, then uses
+an explicitly configured external provider when its endpoint and credential are
+both available. If no provider is usable, or a request fails, the run continues
+with the deterministic local summary.
+
+Only drift metadata — file path, service name, and action — is ever sent to a
+model, and only when a provider is detected. File contents and diffs are never
+transmitted. To prohibit model calls for an organization or repository:
+
+```json
+{
+  "managed_file_sync": {
+    "ai": { "enable_ai_drift_summary": false }
+  }
+}
+```
+
+See [AI settings](#ai-settings) for the full schema and provider environment
+variables.
 
 ### Version pinning
 
@@ -210,15 +256,19 @@ The SHA for any tag is `git rev-list -n 1 v1.0.0` against this repo, or the
 | `changed_files_json` | JSON array of changed file paths. |
 <!-- END action-outputs -->
 
-Exit behaviour: the step exits `0` when the tree is in sync, `1` when drift is
-detected with `fail_on_drift: 'true'`, and `2` on a config error.
+| Exit code | Meaning |
+| --- | --- |
+| `0` | The working tree is in sync, or changes were applied successfully. |
+| `1` | Drift was detected with `fail_on_drift: 'true'`. |
+| `2` | Configuration or sync error. |
 
-## Job summary
+## 📊 Job summary
 
-When run in GitHub Actions, the action writes a Job Summary with the resolved
-configuration, compliant/pending/applied totals, service-level counts, and a
-file-by-file result table. Disabled and excluded services are listed
-separately, so filtered services are not reported as compliant.
+Every GitHub Actions run writes a job summary containing package identity, the
+drift narrative (AI-assisted or local), the resolved configuration and config
+cascade, action and service breakdowns, and a file-by-file result table.
+Reserved package-metadata keys found in config are reported as ignored. Rows
+with no entries are omitted to keep the summary compact.
 
 | State | Meaning |
 | --- | --- |
@@ -228,372 +278,55 @@ separately, so filtered services are not reported as compliant.
 | `Excluded` | Service selection intentionally removed it with `exclude_services`. |
 | `Disabled` | Service selection filtered it with `disabled_services`. |
 
-States and action rows with no entries are omitted to keep the summary compact.
-
-## 🏗️ Configuration inheritance and layering
-
-This action uses a **four-tier config cascade** with switchable marketplace
-defaults, org-wide defaults, repo-specific overrides, and CI-level workflow
-inputs. The default sync direction and runner fallback are set in the runtime
-defaults so they are easy to override without needing a special locked tier.
-
-### Configuration tiers
-
-The config is merged in cascade order:
-
-1. **Tier 1: Marketplace config** (built-in, default ON)  
-   Shipped with the action: best-practice services (`common`, `lf_line_endings`,
-  `markdownlint`, `dependabot_actions`, `dependabot_pip`, `editorconfig`) and a managed note.
-  Explicitly enable or disable it with
-   `use_marketplace_config: true|false` in any tier above it. Typically disabled
-   only for advanced customization.
-
-2. **Tier 2: Org-level global config** (`use_global_config` + `global_config_path` inputs)  
-   Org-wide defaults: additional services, org-specific marker namespace (rare),
-   org-wide managed note, shared variables (org name, license, support email).
-  The conventional `.github/blackout-secure-managed-file-sync-global-config.json`
-  path is loaded automatically when present. Set `use_global_config: 'true'`
-  to require the file or `'false'` to disable discovery.
-
-3. **Tier 3: Repo-specific config** (`config_path` input)  
-   Repository overrides: additional services, repo-specific variables, local
-  metadata, service exclusions. Auto-discovered as
-  `.github/bos-universal-config.json` (preferred), then
-  `bos-universal-config.json`, `managed-file-sync.json`, or
-  `.managed-file-sync.json`. Optional; repos inherit from marketplace + global
-   if not present.
-
-4. **Tier 4: Workflow input overrides** (`services` input)  
-   CI-level control: override the service list for a specific workflow run
-   without touching config files. Use for per-branch or per-environment
-   customization.
-
-### Merge strategy
-
-- **Scalars** (strings, numbers, booleans): lower tiers override upper tiers.
-- **Objects** (dicts): deep-merged, so you can override a single field without
-  repeating the whole object.
-- **Services arrays**: appended by default across marketplace → global → repo,
-  with de-duplication in order.
-- **Service array override mode**: set `use_marketplace_services: false` in a
-  tier to replace inherited `services` instead of appending.
-- **Disabling marketplace**: set `use_marketplace_config: false` in org or repo
-  config to merge only global+repo+workflow.
-
-### Recommended file paths
-
-- **Marketplace config**: `src/sync_kit/blackout-secure-managed-file-sync-marketplace-config.json` (switchable defaults)
-- **Org global config**: `.github/blackout-secure-managed-file-sync-global-config.json` (optional, hub-authored and present in the destination checkout)
-- **Repo config**: `.github/bos-universal-config.json` (preferred, optional per repo)
-- **Managed templates path**: `.github/managed-files` (default)
-
-### Examples
-
-#### Example 1: Marketplace only (default)
-
-No configs needed; the marketplace defaults apply:
-
-```yaml
-- uses: blackoutsecure/bos-managed-file-sync-action@v1
-```
-
-Result: `common`, `lf_line_endings`, `markdownlint`, `dependabot_actions`,
-and `editorconfig` are synced.
-
-#### Example 2: Marketplace + Org config
-
-Create `.github/blackout-secure-managed-file-sync-global-config.json`:
-
-```json
-{
-  "managed_file_sync": {
-    "direction": "source-to-destination",
-    "services": ["common", "lf_line_endings", "markdownlint", "dependabot_actions", "editorconfig"],
-    "variables": {
-      "org_name": "my-org",
-      "support_email": "platform-team@my-org.com",
-      "license": "Apache-2.0"
-    }
-  }
-}
-```
-
-Workflow:
-
-```yaml
-- uses: blackoutsecure/bos-managed-file-sync-action@v1
-```
-
-Result: marketplace config merged with org config (services append by default). All
-destination repos containing the hub-managed global config get `editorconfig` and
-the org variables automatically.
-
-#### Example 3: Marketplace + Org + Repo config
-
-Same as above, plus create `.github/bos-universal-config.json` in the repo:
-
-```json
-{
-  "managed_file_sync": {
-    "services": ["common", "lf_line_endings", "markdownlint", "dependabot_actions", "editorconfig", "prettier"],
-    "variables": {
-      "project_name": "my-typescript-project"
-    }
-  }
-}
-```
-
-Workflow:
-
-```yaml
-- uses: blackoutsecure/bos-managed-file-sync-action@v1
-```
-
-Result: marketplace → org → repo merged (services append by default; objects deep-merge).
-This repo gets `prettier` in addition to org services, with its own project name
-variable.
-
-#### Minimal managed kicker call
-
-Once both config files use their conventional paths, a hub-managed kicker only
-needs runtime behavior inputs:
-
-```yaml
-- uses: blackoutsecure/bos-managed-file-sync-action@v1
-  with:
-    fail_on_drift: ${{ (inputs.mode || 'commit') == 'check' }}
-    show_diff: 'true'
-```
-
-The kicker remains responsible for its triggers, permissions, checkout, and
-commit/check flow. The action reads sources and writes destinations inside that
-checkout; automatic discovery does not fetch a config or template from another
-repository. A hub that owns the policy must publish or install its canonical
-global config into the destination checkout at the conventional path.
-
-#### Hub-owned inline workflow services
-
-To keep workflow templates owned by an automation hub rather than this action,
-the hub can pass the complete service definitions through `global_config_json`.
-Use `update` for kickers: it replaces an existing workflow but never creates a
-new one. The hub remains responsible for serializing its canonical YAML as
-`content_lines`.
-
-```yaml
-- uses: blackoutsecure/bos-managed-file-sync-action@v1
-  with:
-    global_config_json: >-
-      {"managed_file_sync":{"services":["bos_universal_sync_kicker"],"service_definitions":{"bos_universal_sync_kicker":{"mode":"update","files":[{"path":".github/workflows/bos-universal-sync-kicker.yml","content_lines":["name: Blackout Secure universal sync (kicker)","# Complete canonical workflow lines from the automation hub."]}]}}}}
-```
-
-The same object can define `bos_universal_action_test_kicker`,
-`bos_universal_launchpad_kicker`, `bos_universal_marketplace_kicker`, and
-`bos_universal_security_kicker`. Do not supply only service names: every
-inline service needs a `files` definition with canonical `content`,
-`content_lines`, or a destination-local `content_file`.
-
-### Precedence rules
-
-When a field is defined in multiple tiers:
-
-- **Services array**: appended by default across marketplace, global, and repo
-  tiers, with
-  duplicates removed while preserving first-seen order.
-  To replace inherited services instead, set `use_marketplace_services: false`
-  in that tier, for example
-  `{"use_marketplace_services": false, "services": ["prettier"]}`.
-- **Service exclusions**: use `exclude_services` (or `disabled_services`) to
-  drop resolved services from the final set. This is how you remove a
-  marketplace service for a specific global config or repo config.
-- **Variables object**: merged. Global values add to marketplace values, and
-  repo values can add or override both.
-- **Marker namespace**: a lower tier replaces a higher tier (rare).
-- **Managed note**: global config often sets this; repo config can override it.
-
-Concrete example (global exclusion + repo append):
-
-Global config (`.github/blackout-secure-managed-file-sync-global-config.json`):
-
-```json
-{
-  "managed_file_sync": {
-    "services": ["editorconfig"],
-    "exclude_services": ["markdownlint"]
-  }
-}
-```
-
-Repo config (`.github/bos-universal-config.json`):
-
-```json
-{
-  "managed_file_sync": {
-    "services": ["prettier"]
-  }
-}
-```
-
-Resulting enabled services:
-
-- Marketplace defaults start as: `common`, `lf_line_endings`, `markdownlint`, `dependabot_actions`
-- Global appends: `editorconfig`
-- Repo appends: `prettier`
-- Global exclusion removes `markdownlint`
-- Final set: `common`, `lf_line_endings`, `editorconfig`, `prettier`
-
-For the standard baseline plus quality policy, prefer the profile bundle:
-
-```json
-{
-  "managed_file_sync": {
-    "services": ["quality_baseline"]
-  }
-}
-```
-
-To keep inherited defaults but exclude one service, use an exclusion rather
-than replacing the entire service list:
-
-```json
-{
-  "managed_file_sync": {
-    "exclude_services": ["markdownlint"]
-  }
-}
-```
-
-If the repo wants to replace inherited services instead of appending, set:
-
-```json
-{
-  "managed_file_sync": {
-    "use_marketplace_services": false,
-    "services": ["prettier"]
-  }
-}
-```
-
-### Disabling marketplace config
-
-To use only org + repo configs without marketplace best practices:
-
-```json
-{
-  "managed_file_sync": {
-    "use_marketplace_config": false,
-    "services": []
-  }
-}
-```
-
-Set this in org or repo config. This is rarely needed; marketplace defaults are
-conservative and safe. Define replacement services in the global or repo
-`service_definitions` object before enabling them.
-
 ## 📦 Built-in services
 
 Every service below ships with the action and can be overridden per repo. The
-registry is deliberately vendor neutral — org-specific services belong in your
-global or repo config.
+registry is deliberately vendor neutral — organization-specific services belong
+in your global or repository config.
 
 ### File modes
 
-Each managed file uses one mode to define how the action reconciles the
-destination file. A service can set a default mode, and an individual entry in
-`files` can override it with its own `mode`.
+Each managed file uses one mode. A service sets a default mode, and an
+individual entry in `files` can override it.
 
-| Mode | Behavior | Existing destination | Missing destination | Typical use |
-| --- | --- | --- | --- | --- |
-| `block` | Updates only the managed marker block and preserves surrounding content. | Updates the block; preserves the rest of the file. | Creates the file with the managed block. | Shared config files that the repo also edits. |
-| `file` | Reconciles the entire file to the canonical content. | Overwrites the file. | Creates the file. | Fully managed canonical files. |
-| `init` | Installs starter content once and never overwrites it afterward. | Leaves the file unchanged. | Creates the file. | Defaults that repositories may customize. |
-| `update` | Reconciles only when the destination already exists. | Overwrites the file. | Skips the file; does not create it. | Existing workflows or files that must be opted into first. |
-| `absent` | Retires the file from the managed set. | Deletes the file. | No action. | Removing a file from a service while preserving the service definition. |
+| Mode | Existing destination | Missing destination | Typical use |
+| --- | --- | --- | --- |
+| `block` | Updates the managed block; preserves the rest of the file. | Creates the file with the managed block. | Shared config files the repo also edits. |
+| `file` | Overwrites the file. | Creates the file. | Fully managed canonical files. |
+| `init` | Leaves the file unchanged. | Creates the file. | Starter defaults a repo may customize. |
+| `update` | Overwrites the file. | Skips it; never creates. | Files that must be opted into first, such as workflows. |
+| `absent` | Deletes the file. | No action. | Retiring a file while keeping the service definition. |
 
-For `block` mode, markers use the configured namespace and service name, for
-example `>>> managed-file-sync:common >>>` and
-`<<< managed-file-sync:common <<<`.
+### Service registry
 
-| Service | Mode | Managed path(s) |
-| --- | --- | --- |
-| `common` | block | `.gitignore` |
-| `lf_line_endings` | block | `.gitattributes` |
-| `dependabot_actions` | block | `.github/dependabot.yml` |
-| `dependabot_pip` | block | `.github/dependabot.yml` |
-| `editorconfig` | block | `.editorconfig` |
-| `shellcheck` | block | `.shellcheckrc` |
-| `prettier` | block + init | `.prettierignore`, `.prettierrc.json` |
-| `markdownlint` | file | `.markdownlint.json` |
-| `baseline` | bundle | `common`, `lf_line_endings`, `editorconfig`, `markdownlint`, `dependabot_actions`, `dependabot_pip` |
-| `quality_baseline` | bundle | `baseline`, `shellcheck`, `prettier` |
+| Service | Mode | Managed path(s) | Marketplace default |
+| --- | --- | --- | --- |
+| `common` | block | `.gitignore` | ✅ |
+| `lf_line_endings` | block | `.gitattributes` | ✅ |
+| `editorconfig` | block | `.editorconfig` | ✅ |
+| `markdownlint` | file | `.markdownlint.json` | ✅ |
+| `dependabot_actions` | block | `.github/dependabot.yml` | ✅ |
+| `dependabot_pip` | block | `.github/dependabot.yml` | ✅ |
+| `shellcheck` | block | `.shellcheckrc` | — |
+| `prettier` | block + init | `.prettierignore`, `.prettierrc.json` | — |
+| `baseline` | bundle | `common`, `lf_line_endings`, `editorconfig`, `markdownlint`, `dependabot_actions`, `dependabot_pip` | — |
+| `quality_baseline` | bundle | `baseline`, `shellcheck`, `prettier` | — |
 
-The `prettier` service intentionally uses two modes: `.prettierignore`
-inherits the service-level `block` mode, while `.prettierrc.json` overrides it
-with `init`. Strict JSON cannot contain the comment markers required by a
-managed block, and `init` lets a repository customize its formatter config
-without the sync action overwriting it later.
+`prettier` intentionally mixes modes: `.prettierignore` inherits the
+service-level `block` mode, while `.prettierrc.json` overrides it with `init`.
+Strict JSON cannot carry comment markers, and `init` lets a repository
+customize its formatter config without later being overwritten.
 
-### EditorConfig vs. Prettier
-
-These services are related but have different ownership boundaries:
+`editorconfig` and `prettier` have distinct ownership boundaries:
 
 | Service | Owns | Does not own |
 | --- | --- | --- |
-| `editorconfig` | General editor and repository defaults in `.editorconfig`. | Prettier-specific rules, ignore patterns, or formatter settings. |
-| `prettier` | Prettier ignore patterns in `.prettierignore` and the starter formatter config in `.prettierrc.json`. | General editor settings or unrelated repository files. |
+| `editorconfig` | General editor and repository defaults in `.editorconfig`. | Prettier rules, ignore patterns, or formatter settings. |
+| `prettier` | Ignore patterns in `.prettierignore` and the starter `.prettierrc.json`. | General editor settings or unrelated repository files. |
 
-Prettier can read `.editorconfig`, so `editorconfig` may influence how Prettier
-formats files. That is expected: `editorconfig` defines shared editor defaults,
-while `prettier` defines formatter-specific policy. Keep repository-specific
-overrides outside each managed block.
+List the resolved registry for any repo with `bos-sync services`.
 
-
-The Marketplace registry intentionally enables only the conservative
-`baseline` services by default. Additional services and bundles are available
-without being enabled automatically:
-
-- `quality_baseline` adds ShellCheck and Prettier policy.
-Community-health files, release metadata, and application configuration are
-not Marketplace defaults. They are organization- or project-specific and
-belong in global or repository `service_definitions`.
-
-### Optional configuration files
-
-These are reasonable service candidates, but they are intentionally not
-Marketplace defaults because their contents depend on the repository’s runtime,
-build system, or organization policy:
-
-| File | Suggested mode | Why it is optional |
-| --- | --- | --- |
-| `.dockerignore` | `block` | Ignore rules vary by language, build context, and container strategy. |
-| `.npmrc` | `file` or `init` | Registry, package-manager, and security settings are organization-specific. |
-| `.nvmrc` | `init` | Node version is a project decision. |
-| `.python-version` | `init` | Python version is a project and deployment decision. |
-| `.tool-versions` | `init` | A shared version manager file must match the repository’s toolchain. |
-| `.yamllint` or `.yamllint.yaml` | `file` or `init` | YAML rules vary across projects and may conflict with existing policy. |
-| `.codespellrc` | `file` or `init` | Ignore lists and dictionaries are repository-specific. |
-| `.git-blame-ignore-revs` | `file` | History policy should be authored by the repository. |
-
-Define these in global or repository `service_definitions` only after the
-canonical content and ownership are agreed. Do not manage both equivalent
-configuration formats for the same tool, such as `.markdownlint.json` and
-`.markdownlint.yaml`, in one repository.
-
-List the resolved service registry at any time:
-
-```bash
-bos-sync services
-```
-
-### Organization-owned sync workflow
-
-The workflow that invokes this action is intentionally not part of the
-Marketplace registry. Its triggers, permissions, and commit policy are
-organization-specific, so place its `managed_file_sync_workflow` definition in
-your automation-hub global config and enable it there. This keeps Marketplace
-consumers from receiving an opinionated workflow they did not request.
-
-## 🧩 Managed blocks
+### Managed blocks
 
 Block services rewrite only the region between markers, using the comment
 syntax of the target file type:
@@ -610,51 +343,202 @@ dist/
 
 - Missing markers → the block is appended and the file created as needed. When
   a file needs a root structure to be valid (`.github/dependabot.yml` needs
-  `version: 2` / `updates:`), the service declares a `scaffold` that is written
-  once at creation time and never touched again.
-- A start marker with no end marker → the run **fails** rather than guessing
-  where the block ends.
+  `version: 2` / `updates:`), the service declares a `scaffold` written once at
+  creation and never touched again.
+- A start marker with no end marker → the run fails rather than guessing where
+  the block ends.
 - Markdown, HTML, and XML use wrapping comments
-  (`<!-- >>> managed-file-sync:docs >>> -->`).
-- Blocks belonging to another namespace are never touched by default. If
-  `take_over_managed_files` is `true`, competing blocks for the same service
-  are removed before the configured block is written; unrelated content and
-  blocks for other services are preserved.
-- Set `managed_note` to stamp a provenance line under each start marker (and as
-  a header on whole-file / init targets). Formats without comment syntax, such
-  as JSON, are skipped automatically.
+  (`<!-- >>> managed-file-sync:docs >>> -->`); JSON and lock files are treated
+  as commentless, so notes are skipped instead of corrupting them.
+- `managed_note` stamps a provenance line under each start marker, and as a
+  header on whole-file and init targets. The Marketplace default resolves at run
+  time to the kit that wrote the block and the config file that selected it:
 
-| Existing block state | `take_over_managed_files: false` | `take_over_managed_files: true` |
+  ```text
+  # >>> managed-file-sync:common >>>
+  # Managed by Blackout Secure Managed File Sync — configure services in .github/bos-universal-config.json.
+  ```
+
+  Set `managed_note` to your own string (or `false`) in any tier to change it.
+
+| Existing block state | `take_over_managed_files: false` (default) | `take_over_managed_files: true` |
 | --- | --- | --- |
 | Configured namespace exists | Update it in place. | Update it in place. |
 | Different namespace exists | Fail safely; no duplicate is written. | Remove the competing block and write the configured block. |
-| Multiple namespaces exist | Fail safely; ownership is ambiguous. | Remove all competing blocks for that service, then write the configured block. |
+| Multiple namespaces exist | Fail safely; ownership is ambiguous. | Remove all competing blocks for that service, then write. |
 | No block exists | Append the configured block. | Append the configured block. |
 
-## 📝 Config schema
+### Services that are deliberately not defaults
 
-Per-repo policy lives in the `managed_file_sync` section of a JSON config file
-— `.github/bos-universal-config.json` (preferred), `bos-universal-config.json`,
-`managed-file-sync.json`, or `.managed-file-sync.json`. A document without that
-key is treated as the section itself. Every field is optional and unknown keys
-are ignored, so newer versions can extend the schema without breaking older
-callers.
+Community-health files, release metadata, and application configuration depend
+on the repository's runtime, build system, or organization policy, so they are
+not Marketplace defaults. Define them in global or repository
+`service_definitions` once the canonical content and ownership are agreed.
 
-A minimal repo config:
+| File | Suggested mode | Why it is optional |
+| --- | --- | --- |
+| `.dockerignore` | `block` | Ignore rules vary by language, build context, and container strategy. |
+| `.npmrc` | `file` or `init` | Registry, package-manager, and security settings are organization-specific. |
+| `.nvmrc` | `init` | Node version is a project decision. |
+| `.python-version` | `init` | Python version is a project and deployment decision. |
+| `.tool-versions` | `init` | A shared version-manager file must match the repository toolchain. |
+| `.yamllint` | `file` or `init` | YAML rules vary across projects and may conflict with existing policy. |
+| `.codespellrc` | `file` or `init` | Ignore lists and dictionaries are repository-specific. |
+| `.git-blame-ignore-revs` | `file` | History policy should be authored by the repository. |
+
+Do not manage two equivalent formats for the same tool (for example
+`.markdownlint.json` and `.markdownlint.yaml`) in one repository.
+
+The workflow that invokes this action is also excluded on purpose: its
+triggers, permissions, and commit policy are organization-specific. Put that
+`update`-mode service in your automation hub's global config.
+
+## 🏗️ Configuration inheritance and layering
+
+### Configuration tiers
+
+Configuration is merged in cascade order; later tiers win.
+
+| # | Tier | Source | Notes |
+| --- | --- | --- | --- |
+| 1 | Marketplace defaults | Bundled [marketplace config](src/sync_kit/managed-file-sync-marketplace-config.json) | Conservative baseline services, marker namespace, managed note, and AI defaults. Disable with `use_marketplace_config: false`. |
+| 2 | Organization global config | `.github/blackout-secure-managed-file-sync-global-config.json` | Loaded automatically when present. `use_global_config: 'true'` requires it, `'false'` disables discovery. |
+| 3 | Repository config | `.github/bos-universal-config.json` (preferred), `bos-universal-config.json`, `managed-file-sync.json`, `.managed-file-sync.json` | Optional; repos inherit tiers 1–2 when absent. |
+| 4 | Workflow inputs | `services`, `config_json`, `global_config_json`, `managed_files_path` | Per-run control without touching config files. |
+
+All files are read from the installed action or the destination checkout;
+config discovery never fetches from another repository. A hub that owns policy
+must publish its canonical global config into the destination checkout.
+
+### Merge and precedence rules
+
+| Field kind | Behavior |
+| --- | --- |
+| Scalars | Later tiers replace earlier tiers. |
+| Objects | Deep-merged, so one nested field can be overridden without repeating the object. |
+| `services` | Appended across tiers with duplicates removed in first-seen order. Set `use_marketplace_services: false` in a tier to replace inherited services instead. |
+| `exclude_services` / `disabled_services` | Appended across tiers, then removed from the resolved set. |
+| `variables` | Merged; repo values override global and Marketplace values. |
+| `marker_namespace`, `managed_note` | A later tier replaces the earlier value. |
+| `service_definitions` | Merged by service name; a same-named entry fully replaces the inherited definition. |
+
+To keep inherited defaults but drop one service, prefer an exclusion over
+replacing the whole list:
 
 ```json
 {
   "managed_file_sync": {
-    "services": ["common", "lf_line_endings", "editorconfig"],
+    "exclude_services": ["markdownlint"]
+  }
+}
+```
+
+To use only global and repository policy without Marketplace defaults:
+
+```json
+{
+  "managed_file_sync": {
+    "use_marketplace_config": false,
+    "services": []
+  }
+}
+```
+
+This is rarely needed; Marketplace defaults are conservative. Define
+replacement services in `service_definitions` before enabling them.
+
+### Package metadata is not policy
+
+Package identity is separate from this cascade. The kit's name, version,
+author, and description come from the installed package metadata
+(`pyproject.toml`) and remain available even when repository policy is absent,
+overridden, or fails to load.
+
+The reserved keys `name`, `version`, `author`, `author_email`, `description`,
+`license`, `package_name`, `package_version`, `package_author`, and
+`package_description` are stripped from the top level of **every** tier before
+the merge, and the ignored keys are reported by `bos-sync validate` and in the
+job summary. Nested `service_definitions[*].description` is policy, not
+identity, and is preserved.
+
+`bos-sync validate` prints package metadata and the applied config cascade
+before any policy output.
+
+### Examples
+
+**Organization defaults plus a repository addition.** Global config
+(`.github/blackout-secure-managed-file-sync-global-config.json`):
+
+```json
+{
+  "managed_file_sync": {
+    "services": ["editorconfig"],
+    "exclude_services": ["markdownlint"],
     "variables": {
-      "owner": "Example Org"
+      "org_name": "my-org",
+      "support_email": "platform-team@my-org.com"
     }
   }
 }
 ```
 
-Services can also be toggled with an object, which is convenient for generated
-configs:
+Repository config (`.github/bos-universal-config.json`):
+
+```json
+{
+  "managed_file_sync": {
+    "services": ["prettier"],
+    "variables": { "project_name": "my-typescript-project" }
+  }
+}
+```
+
+Resolved set: Marketplace defaults plus `editorconfig` and `prettier`, minus
+`markdownlint`. Variables from both tiers are merged.
+
+**Replace inherited services instead of appending:**
+
+```json
+{
+  "managed_file_sync": {
+    "use_marketplace_services": false,
+    "services": ["prettier"]
+  }
+}
+```
+
+**Hub-owned inline services.** An automation hub can pass complete service
+definitions through `global_config_json`, keeping workflow templates in the hub
+rather than in this action. Use `update` mode for kicker workflows: it replaces
+an existing workflow but never creates one.
+
+```yaml
+- uses: blackoutsecure/bos-managed-file-sync-action@v1
+  with:
+    global_config_json: >-
+      {"managed_file_sync":{"services":["bos_universal_sync_kicker"],"service_definitions":{"bos_universal_sync_kicker":{"mode":"update","files":[{"path":".github/workflows/bos-universal-sync-kicker.yml","content_lines":["name: Blackout Secure universal sync (kicker)"]}]}}}}
+```
+
+Every inline service needs a `files` definition with `content`, `content_lines`,
+or a destination-local `content_file`; names alone are rejected.
+
+## 📝 Config schema reference
+
+Per-repo policy lives in the `managed_file_sync` section of a JSON config file.
+A document without that key is treated as the section itself. Every field is
+optional and unknown keys are ignored, so newer versions can extend the schema
+without breaking older callers.
+
+```json
+{
+  "managed_file_sync": {
+    "services": ["common", "lf_line_endings", "editorconfig"],
+    "variables": { "owner": "Example Org" }
+  }
+}
+```
+
+Services can also be toggled with an object, which suits generated configs:
 
 ```json
 {
@@ -665,62 +549,95 @@ configs:
 }
 ```
 
-| Key | Type | Description |
-| --- | --- | --- |
-| `direction` | string | One-way sync direction. Defaults to and only accepts `source-to-destination`; reverse and bidirectional modes are rejected. |
-| `services` | array or object | Enabled services. `["*"]` enables every file-managing service in the registry. |
-| `use_marketplace_services` | boolean | Controls array merge behavior for `services` at this tier. Default `true` appends to inherited services; `false` replaces inherited services. |
-| `exclude_services` | array | Services to remove from the resolved set for this scope (global or repo). |
-| `disabled_services` | array | Names removed after resolution — useful with `*` and bundles. |
-| `service_definitions` | object | Repo-local services. Keys use letters, numbers, `.`, `_`, or `-`; same-named entries override marketplace/global services. |
-| `managed_files_path` | string | Base path for managed templates (`content_file` lookup). Default `.github/managed-files`. Set it in global config for org-wide defaults, or in repo config for local override. |
-| `variables` | object | Values for `{{token}}` placeholders in service content. |
-| `marker_namespace` | string | Marker namespace for managed blocks. Uses letters, numbers, `.`, `_`, or `-`; default `managed-file-sync`. |
-| `managed_note` | string or array | Provenance note written into managed blocks and file headers. Off by default. |
-| `take_over_managed_files` | boolean | Default `false`. When `true`, removes competing managed blocks for the same service before writing the configured block. When `false`, the run fails instead. |
+### Top-level keys
 
-Built-in variables: `{{year}}`, `{{owner}}`, `{{repo}}`, and `{{repository}}`
-(from `GITHUB_REPOSITORY`).
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `direction` | string | `source-to-destination` | One-way sync direction. Any other value is rejected. |
+| `services` | array or object | Marketplace baseline | Enabled services. `["*"]` enables every file-managing service in the registry. |
+| `use_marketplace_config` | boolean | `true` | `false` drops the bundled Marketplace tier for this run. |
+| `use_marketplace_services` | boolean | `true` | `false` replaces inherited `services` at this tier instead of appending. |
+| `exclude_services` | array | `[]` | Services removed from the resolved set for this scope. |
+| `disabled_services` | array | `[]` | Names removed after resolution — useful with `*` and bundles. |
+| `service_definitions` | object | `{}` | Local services. Keys use letters, numbers, `.`, `_`, or `-`; same-named entries override inherited services. |
+| `managed_files_path` | string | `.github/managed-files` | Base path for `content_file` template lookup. |
+| `variables` | object | `{}` | Values for `{{token}}` placeholders in service content. |
+| `marker_namespace` | string | `managed-file-sync` | Marker namespace for managed blocks. |
+| `managed_note` | string or array | see below | Provenance note written into managed blocks and file headers. |
+| `take_over_managed_files` | boolean | `false` | When `true`, removes competing managed blocks for the same service; when `false`, the run fails instead. |
+| `ai` | object | see below | AI-assisted drift summary policy. |
 
-`{{project_name}}` is also built-in and defaults to the repository name
-(`{{repo}}`) when not specified/overridden in config variables.
-
-Runner built-ins are also available for template rendering:
-
-- `{{DEFAULT_RUNNER}}`
-- `{{RUNNER_X64}}`
-- `{{RUNNER_ARM64}}`
-- `{{fallback_default_runner}}`
-- `{{WORKLOAD_ARCH}}`
-- `{{SELECTED_RUNNER}}`
-
-Runner fallback behavior:
-
-- Source env vars: `DEFAULT_RUNNER`, `RUNNER_X64`, `RUNNER_ARM64`
-- If any value is missing, empty, or invalid, it falls back to
-  `{{fallback_default_runner}}` which defaults to `ubuntu-latest`.
-- Valid values are either a single runner label (for example
-  `ubuntu-latest`) or a JSON array string (for example
-  `["ubuntu-latest"]`).
-
-Workload selection:
-
-- Set action input `workload_arch` to `auto` (default), `x64`, `arm64`, or
-  `default`.
-- `auto` uses `RUNNER_ARCH` to pick `{{RUNNER_X64}}` or `{{RUNNER_ARM64}}`.
-- Invalid or unavailable runtime arch falls back to `{{DEFAULT_RUNNER}}`.
-- `{{SELECTED_RUNNER}}` is the final resolved runner value for templates.
-
-Unknown tokens are left untouched rather than blanked out.
-
-### Example service definitions
-
-Add a `service_definitions` entry:
+### AI settings
 
 ```json
 {
   "managed_file_sync": {
-    "services": ["common", "security_policy", "release_config"],
+    "ai": {
+      "enable_ai_drift_summary": true,
+      "ai_drift_summary_provider": "auto",
+      "local_heuristic_fallback": true
+    }
+  }
+}
+```
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `ai.enable_ai_drift_summary` | boolean | `true` | `false` prohibits all model calls for this org or repo. |
+| `ai.ai_drift_summary_provider` | string | `auto` | `auto`, `none`, `github-models`, or an external OpenAI-compatible provider name. |
+| `ai.local_heuristic_fallback` | boolean | `true` | Keeps the deterministic summary when no provider is usable. |
+
+### Template variables
+
+Service content is rendered with `{{token}}` placeholders. Unknown tokens are
+left untouched rather than blanked out. Every key in `variables` is available as
+a token, and the built-ins below are always present.
+
+| Variable | Default | Source |
+| --- | --- | --- |
+| `{{package_name}}` | `bos-managed-file-sync` | Installed package metadata. Cannot be overridden by config. |
+| `{{package_title}}` | `Blackout Secure Managed File Sync` | Installed package metadata. Cannot be overridden by config. |
+| `{{package_version}}` | installed version | Installed package metadata. Cannot be overridden by config. |
+| `{{config_source}}` | `managed-file-sync-marketplace-config.json` | The highest-precedence config file in effect: the repository config, else the global config, else the bundled Marketplace file. Cannot be overridden by config. |
+| `{{year}}` | current year | System clock at run time. |
+| `{{repository}}` | _(empty)_ | `GITHUB_REPOSITORY`, as `owner/repo`. |
+| `{{owner}}` | _(empty)_ | Owner half of `GITHUB_REPOSITORY`, falling back to `GITHUB_REPOSITORY_OWNER`. |
+| `{{repo}}` | _(empty)_ | Repository half of `GITHUB_REPOSITORY`. |
+| `{{project_name}}` | `{{repo}}` | Override in `variables`. |
+| `{{fallback_default_runner}}` | `ubuntu-latest` | Override in `variables`; used whenever a runner value is missing or invalid. |
+| `{{DEFAULT_RUNNER}}` | `{{fallback_default_runner}}` | `variables.DEFAULT_RUNNER`, then the `DEFAULT_RUNNER` environment variable. |
+| `{{RUNNER_X64}}` | `{{fallback_default_runner}}` | `variables.RUNNER_X64`, then the `RUNNER_X64` environment variable. |
+| `{{RUNNER_ARM64}}` | `{{fallback_default_runner}}` | `variables.RUNNER_ARM64`, then the `RUNNER_ARM64` environment variable. |
+| `{{WORKLOAD_ARCH}}` | `auto` | `workload_arch` input: `auto`, `x64`, `arm64`, or `default`. Unknown values degrade to `auto`. |
+| `{{SELECTED_RUNNER}}` | resolved at run time | `{{WORKLOAD_ARCH}}`, or `RUNNER_ARCH` when the workload is `auto`. |
+
+A runner value is valid when it is a single label (`ubuntu-latest`) or a JSON
+array string of labels (`["ubuntu-latest"]`); anything else falls back to
+`{{fallback_default_runner}}`.
+
+### Environment variables
+
+| Variable | Used for | Purpose |
+| --- | --- | --- |
+| `GITHUB_REPOSITORY`, `GITHUB_REPOSITORY_OWNER` | Templates | Populate `{{repository}}`, `{{owner}}`, and `{{repo}}`. |
+| `DEFAULT_RUNNER`, `RUNNER_X64`, `RUNNER_ARM64` | Templates | Runner labels for workflow templates. |
+| `RUNNER_ARCH` | Templates | Auto-detects runner architecture for `{{SELECTED_RUNNER}}`. |
+| `MFS_WORKLOAD_ARCH` | Action step | Set from the `workload_arch` input. |
+| `GITHUB_OUTPUT`, `GITHUB_STEP_SUMMARY` | Reporting | Emit action outputs and the job summary; skipped when unset. |
+| `GITHUB_MODELS_TOKEN`, `GITHUB_TOKEN` | AI | Credential for GitHub Models, in that order. |
+| `GITHUB_MODELS_ENDPOINT`, `GITHUB_MODELS_MODEL` | AI | Optional endpoint and model overrides; endpoints must be HTTPS. |
+| `<PROVIDER>_API_KEY`, `<PROVIDER>_API_ENDPOINT`, `<PROVIDER>_MODEL` | AI | External provider settings, for example `OPENAI_API_KEY`. |
+| `AI_API_KEY`, `AI_API_ENDPOINT` | AI | Generic fallbacks for an external provider. |
+
+Keep credentials in Actions secrets or the runner environment; never commit them
+to config files.
+
+### Service definition fields
+
+```json
+{
+  "managed_file_sync": {
+    "services": ["security_policy", "release_config"],
     "service_definitions": {
       "security_policy": {
         "mode": "init",
@@ -750,122 +667,30 @@ Add a `service_definitions` entry:
 | Field | Description |
 | --- | --- |
 | `mode` | `block` (default), `file`, `init`, `update`, or `absent`. Can be overridden per file. |
-| `includes` | Makes the service a bundle: it expands to the listed services instead of managing files. |
+| `includes` | Makes the service a bundle: it expands to the listed services instead of managing files. Mutually exclusive with `files`. |
 | `description` | Shown by `bos-sync services`. |
 | `files[].path` | Repo-relative path. Absolute paths and `..` are rejected. |
+| `files[].mode` | Per-file override of the service mode. |
 | `files[].content` | String, or array of lines. |
 | `files[].content_lines` | Array of lines, joined with newlines. |
+| `files[].content_file` | Template source resolved beneath `managed_files_path`. Exactly one content source per file entry. |
 | `files[].scaffold` | Block mode only: root structure written once when the file is created. |
-| `files[].content_file` | Template file source for service definitions, resolved from `managed_files_path` (default `.github/managed-files`). |
 | `files[].comment_prefix` | Override marker comment syntax. Use `open\|close` for wrapping styles. |
-| `files[].marker_namespace` | Optional marker namespace for this block. Existing blocks must use the configured namespace; competing namespaces fail safely instead of creating a duplicate. |
+| `files[].marker_namespace` | Marker namespace for this block. Competing namespaces fail safely instead of creating a duplicate. |
 
-When taking over an existing block from another manager, keep the service name
-and set `files[].marker_namespace` to the existing namespace. The action then
-updates that block in place instead of appending a second block:
+To adopt an existing block written by another manager, keep the service name and
+set `files[].marker_namespace` to the existing namespace — the action then
+updates that block in place instead of appending a second one. For an
+intentional ownership handoff, enable `take_over_managed_files: true`; only
+competing blocks for the same service are removed, and the rest of the file is
+preserved.
 
-```json
-{
-  "managed_file_sync": {
-    "services": ["dependabot_actions"],
-    "service_definitions": {
-      "dependabot_actions": {
-        "mode": "block",
-        "files": [
-          {
-            "path": ".github/dependabot.yml",
-            "marker_namespace": "bos-automation-hub",
-            "content_lines": [
-              "  - package-ecosystem: github-actions",
-              "    directory: \"/\""
-            ]
-          }
-        ]
-      }
-    }
-  }
-}
-```
+### Managed templates directory
 
-Use this during an ownership migration. Keep takeover disabled by default and
-enable it only for an intentional handoff:
-
-```json
-{
-  "managed_file_sync": {
-    "take_over_managed_files": true
-  }
-}
-```
-
-The action removes only competing blocks for the same service and preserves the
-rest of the file. Do not configure two services with the same service name and
-namespace for one file.
-
-### Managed files base path and service paths
-
-Use `.github/managed-files` as the default template base path unless your org
-already has a standard location.
-
-Service paths can be handled in two ways:
-
-- Use built-in services and their default managed file paths.
-- Define your own `service_definitions` with explicit `files[].path` values.
-
-Built-in destinations are listed once in [Built-in services](#-built-in-services).
-
-Built-in config layers are bundled in:
-
-- [src/sync_kit/blackout-secure-managed-file-sync-marketplace-config.json](src/sync_kit/blackout-secure-managed-file-sync-marketplace-config.json)
-
-## 💻 Local usage (CLI)
-
-The kit also ships a standalone `bos-sync` CLI for local triage or non-GitHub
-CI:
-
-```bash
-python -m pip install \
-  'git+https://github.com/blackoutsecure/bos-managed-file-sync-action.git@v1.0.0'
-
-# List the resolved service registry
-bos-sync services --root .
-
-# Validate config without touching any file
-bos-sync validate --root .
-
-# Preview, then apply
-bos-sync apply --root . --dry-run
-bos-sync apply --root . --services common,editorconfig
-
-# CI drift gate (dry-run + non-zero exit on drift)
-bos-sync check --root .
-bos-sync check --root . --no-diff       # file list only, no diffs
-
-# Use managed templates from a custom directory (default is .github/managed-files)
-bos-sync apply --managed-files-path .github/managed-files
-```
-
-Exit codes: `0` in sync, `1` drift detected, `2` config error.
-
-## 📁 Managed templates directory
-
-Recommended default path: `.github/managed-files`.
-
-Why this path is recommended:
-
-- Keeps sync templates near repo governance files in `.github`.
-- Avoids cluttering the repository root.
-- Works naturally with repo/global config layering.
-
-For repo/global `service_definitions`, `content_file` sources resolve from
-`managed_files_path`, which defaults to `.github/managed-files`.
-
-Destination is always defined per service file via `files[].path`.
-Source content comes from the merged built-in/global/repo service definition:
-inline content or `content_file` resolved beneath `managed_files_path`. The
-action never writes to that source or pushes changes to another repository.
-
-You can set this path in config:
+`content_file` sources resolve beneath `managed_files_path`, which defaults to
+`.github/managed-files` — close to the other governance files, out of the
+repository root, and compatible with config layering. The destination is always
+declared per file via `files[].path`.
 
 ```json
 {
@@ -876,57 +701,101 @@ You can set this path in config:
 }
 ```
 
-Or override in workflow input:
+The same value can be overridden per run with the `managed_files_path` input.
+The action never writes to a template source and never pushes to another
+repository.
 
-```yaml
-- uses: blackoutsecure/bos-managed-file-sync-action@v1
-  with:
-    managed_files_path: '.github/managed-files'
-```
+## ⚠️ Runtime and repository notes
 
-Recommended baseline:
+- **Checkout is required.** Put `actions/checkout` before the action; without a
+  working tree there is nothing to reconcile.
+- **Sync is one-way.** The catalog and templates are the source, the checkout is
+  the destination. `direction` accepts only `source-to-destination`.
+- **Config discovery is local.** Global and repository config are read from the
+  destination checkout; nothing is fetched from another repository.
+- **Conflicting ownership fails fast.** Two services may share a path only when
+  both are `block` mode with distinct markers; every other overlap is rejected
+  before any write.
+- **Bundles cannot cycle.** `includes` is expanded with a depth limit and a
+  clear error instead of looping.
+- **Network access is optional.** Only the AI drift summary can make an outbound
+  request; the sync path itself never touches the network.
 
-- Set `managed_files_path` in repo/global config to `.github/managed-files`.
-- Keep reusable `content_file` templates under `.github/managed-files/**`.
-- Keep the optional global config at
-  `.github/blackout-secure-managed-file-sync-global-config.json` for automatic
-  discovery. Use `use_global_config: 'true'` only when absence must fail.
-
-## 🔐 Security and safety notes
+## 🔐 Security and safety
 
 - **Least privilege.** Drift checks only need `contents: read`. Grant
   `contents: write` only in workflows that commit, and prefer opening a pull
   request over pushing to a protected branch.
 - **Path containment.** Service paths must be repo relative; absolute paths and
-  `..` segments are rejected. Resolved targets and `content_file` templates
-  must also remain inside their allowed roots after following parent symlinks,
-  and managed targets cannot themselves be symlinks.
+  `..` segments are rejected. Resolved targets and `content_file` templates must
+  remain inside their allowed roots after following parent symlinks, and managed
+  targets cannot themselves be symlinks.
 - **No code execution.** Service definitions are pure data. The engine never
   evaluates content, shells out, or fetches remote URLs.
+- **Constrained AI egress.** The optional drift summary requires an HTTPS
+  endpoint plus an explicit credential, sends drift metadata only, and degrades
+  to the local summary on any failure. `ai.enable_ai_drift_summary: false`
+  prohibits it entirely.
+- **Identity cannot be spoofed by config.** Package name, version, author, and
+  description are read from the installed package; the matching config keys are
+  stripped from every tier before merging.
 - **Minimal runtime supply chain.** The sync path is stdlib only and runs from
   the bundled source without installing build dependencies. The action's
   `actions/setup-python` dependency is SHA-pinned.
-- **Non-destructive by default.** `block` services preserve everything outside
-  the markers, `init` services never overwrite an existing file, `update`
-  services never create a missing file, and `dry_run` never writes. Only
-  `file` and `update` services replace content wholesale — use them
+- **Non-destructive by default.** `block` preserves everything outside the
+  markers, `init` never overwrites, `update` never creates, and `dry_run` never
+  writes. Only `file` and `update` replace content wholesale — use them
   deliberately.
-- **Best-effort concurrent-change detection.** Before committing and again
-  immediately before each mutation, the engine rechecks each target's identity,
+- **Best-effort concurrent-change detection.** Before committing, and again
+  immediately before each mutation, the engine rechecks every target's identity,
   mode, and content. Detected conflicts fail for a retry, but callers should
   still prevent concurrent writers when strict serialization is required.
-- **Protect central config.** Anyone who can change central global/repo config
-  can change files in every repo that consumes it. Protect those repos and pin
-  this action to a tag or SHA.
-- **No secrets in config.** Keep credentials out of `managed_file_sync`
-  configs and templates. Use GitHub Secrets for sensitive values and GitHub
-  Variables for non-sensitive shared values.
+- **Protect central config.** Anyone who can change global or repository config
+  can change files in every consuming repo. Protect those repos and pin this
+  action to a tag or SHA.
+- **No secrets in config.** Keep credentials out of `managed_file_sync` configs
+  and templates. Use GitHub Secrets for sensitive values and GitHub Variables
+  for non-sensitive shared values.
 - **Untrusted pull requests.** Run drift checks with `pull_request` (never
   `pull_request_target`) and no write permissions.
 
+## 💻 Local usage (CLI)
+
+The kit ships a standalone `bos-sync` CLI for local triage or non-GitHub CI:
+
+```bash
+python -m pip install \
+  'git+https://github.com/blackoutsecure/bos-managed-file-sync-action.git@v1.0.0'
+
+# List the resolved service registry
+bos-sync services --root .
+
+# Print package metadata and the config cascade, then validate policy
+bos-sync validate --root .
+
+# Preview, then apply
+bos-sync apply --root . --dry-run
+bos-sync apply --root . --services common,editorconfig
+
+# CI drift gate (dry-run + non-zero exit on drift)
+bos-sync check --root .
+bos-sync check --root . --no-diff       # file list only, no diffs
+
+# Require a custom organization config
+bos-sync validate --root . --global-config .github/org-sync.json --use-global-config
+
+# Ignore a conventional global config for one local run
+bos-sync validate --root . --no-global-config
+
+# Use managed templates from a custom directory
+bos-sync apply --root . --managed-files-path .github/managed-files
+```
+
+Exit codes match the action: `0` in sync, `1` drift detected, `2` config error.
+
 ## 🤝 Contributing
 
-Issues and PRs are welcome on `dev`. Run the tests with:
+Issues and PRs are welcome on `dev`. Run the checks with:
 
 ```bash
 python -m pip install -e '.[dev]'
@@ -935,8 +804,9 @@ python -m ruff check src test scripts
 python3 scripts/render_readme_inputs.py --check
 ```
 
-Contributions that keep the engine generic are welcome. Org-specific service
-definitions belong in your own global/repo config, not in marketplace defaults.
+Contributions that keep the engine generic are welcome. Organization-specific
+service definitions belong in your own global or repository config, not in
+Marketplace defaults.
 
 ## 📜 License
 

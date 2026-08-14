@@ -1,0 +1,47 @@
+# Dependabot config for bos-managed-file-sync-action.
+#
+# This repo follows the Blackout Secure Marketplace Action dev/main
+# split:
+#   * `dev`  — default branch. Source of truth: workflow files and all
+#              development land here, and Dependabot PRs target it so CI
+#              runs against them.
+#   * `main` — curated Marketplace artifact (no workflow files). Receives
+#              allowlist promotes from `dev` via the hub release pipeline.
+#
+# Dependabot reads its config only from the default branch (`dev`). The
+# explicit `target-branch: dev` below keeps PRs on `dev` even if the
+# default branch is ever flipped back to `main`.
+
+version: 2
+updates:
+
+# >>> managed-file-sync:dependabot_actions >>>
+# Managed by Blackout Secure. Best practices applied via marketplace config, customized in .github/blackout-secure-managed-file-sync-global-config.json and .github/bos-universal-config.json.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies
+# <<< managed-file-sync:dependabot_actions <<<
+
+# >>> managed-file-sync:dependabot_pip >>>
+# Managed by Blackout Secure. Best practices applied via marketplace config, customized in .github/blackout-secure-managed-file-sync-global-config.json and .github/bos-universal-config.json.
+  - package-ecosystem: pip
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+      include: scope
+    labels:
+      - dependencies
+      - python
+# <<< managed-file-sync:dependabot_pip <<<

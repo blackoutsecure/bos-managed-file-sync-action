@@ -19,8 +19,11 @@ import os
 import sys
 
 from . import __version__
+from .ai import detect_provider, summarize
 from .catalog import load_catalog, resolve_services
 from .config import (
+    MARKETPLACE_CONFIG_FILE,
+    ai_settings,
     find_config,
     load_repo_config,
     managed_note,
@@ -32,6 +35,7 @@ from .config import (
 )
 from .engine import FileResult, SyncEngine, SyncResult
 from .errors import ConfigError, SyncKitError
+from .metadata import package_metadata
 from .paths import resolve_repo_root
 
 EXIT_OK = 0
@@ -118,6 +122,9 @@ class _Plan:
     """Everything resolved from disk before any file is touched."""
 
     def __init__(self, args: argparse.Namespace) -> None:
+        # Package identity is resolved before config so it stays available
+        # even when repo policy is absent, overridden, or fails to load.
+        self.package = package_metadata()
         self.root = resolve_repo_root(args.root)
         self.config_file = find_config(self.root, args.config)
         global_config = self.root / args.global_config
@@ -127,13 +134,18 @@ class _Plan:
             self.global_config_file = None
         else:
             self.global_config_file = global_config if global_config.is_file() else None
+        self.ignored_metadata_keys: list[str] = []
         self.section = load_repo_config(
             config_file=self.config_file,
             global_config_file=self.global_config_file,
             global_config_json=args.global_config_json,
             config_json=args.config_json,
+            ignored_metadata_keys=self.ignored_metadata_keys,
         )
+        self.source_paths = self._source_paths(args)
+        self.config_source = self._config_source()
         self.direction = sync_direction(self.section)
+        self.ai = ai_settings(self.section)
         self.catalog = load_catalog(
             root=self.root,
             section=self.section,
@@ -145,6 +157,32 @@ class _Plan:
         self.take_over_managed_files = take_over_managed_files(self.section)
         self.note = managed_note(self.section)
         self.variables = string_map(self.section.get("variables"))
+
+    def _source_paths(self, args: argparse.Namespace) -> tuple[str, ...]:
+        """Applied config tiers, in precedence order."""
+        sources: list[str] = []
+        if self.section.get("use_marketplace_config", True):
+            sources.append(f"{MARKETPLACE_CONFIG_FILE} (bundled)")
+        if self.global_config_file:
+            sources.append(str(self.global_config_file))
+        if args.global_config_json:
+            sources.append("--global-config-json (inline)")
+        if self.config_file:
+            sources.append(str(self.config_file))
+        if args.config_json:
+            sources.append("--config-json (inline)")
+        return tuple(sources)
+
+    def _config_source(self) -> str:
+        """The highest-precedence config file, for the `{{config_source}}` variable."""
+        for candidate in (self.config_file, self.global_config_file):
+            if candidate is None:
+                continue
+            try:
+                return candidate.relative_to(self.root).as_posix()
+            except ValueError:
+                return str(candidate)
+        return MARKETPLACE_CONFIG_FILE
 
 
 def _write_github_output(result: SyncResult) -> None:
@@ -166,6 +204,44 @@ def _write_github_output(result: SyncResult) -> None:
             handle.write(f"{delimiter}\n")
     except OSError as exc:
         raise ConfigError(f"failed to write GitHub outputs to '{output_file}': {exc}") from exc
+
+
+def _local_drift_summary(result: SyncResult) -> str:
+    """Deterministic drift narrative — always available, never a network call."""
+    if not result.changed:
+        return "All managed files are in sync."
+    per_service: dict[str, int] = {}
+    for item in result.file_results:
+        if item.action:
+            per_service[item.service] = per_service.get(item.service, 0) + 1
+    detail = ", ".join(f"{service} ({count})" for service, count in sorted(per_service.items()))
+    verb = "would change" if result.dry_run else "changed"
+    return f"{len(result.changed_files)} file(s) {verb} across: {detail}."
+
+
+def _drift_summary(plan: _Plan, result: SyncResult) -> tuple[str, str]:
+    """Return the drift summary and its source (provider name or ``local``).
+
+    Only drift metadata (path, service, action) is ever sent to a provider, and
+    any failure degrades to the deterministic local summary.
+    """
+    local = _local_drift_summary(result) if plan.ai.local_heuristic_fallback else ""
+    if not plan.ai.enable_ai_drift_summary or not result.changed:
+        return local, "local"
+
+    provider = detect_provider(plan.ai.ai_drift_summary_provider)
+    if provider is None:
+        return local, "local"
+
+    changes = [
+        {"path": item.path, "service": item.service, "action": item.action or ""}
+        for item in result.file_results
+        if item.action
+    ]
+    text = summarize(changes, provider)
+    if not text:
+        return local, "local (provider unavailable)"
+    return text, provider.name
 
 
 def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
@@ -289,6 +365,14 @@ def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
     lines = [
         f"## Managed file sync: {verdict}",
         "",
+        "### Package",
+        "",
+        "| Field | Value |",
+        "| --- | --- |",
+        f"| Name | <code>{escaped(plan.package['name'])}</code> |",
+        f"| Version | <code>{escaped(plan.package['version'])}</code> |",
+        f"| Author | <code>{escaped(plan.package['author'])}</code> |",
+        "",
         "### Results",
         "",
         f"| {' | '.join(visible_statuses)} | Evaluated files | Changed files |",
@@ -309,9 +393,32 @@ def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
         f"take_over_managed_files: {'true' if plan.take_over_managed_files else 'false'}",
         f"services: {escaped(', '.join(service.name for service in plan.services) if plan.services else '(none)')}",
         f"mode: {'dry-run' if result.dry_run else 'apply'}",
+        f"config cascade: {escaped(serialize(list(plan.source_paths)))}",
         "</pre>",
         "",
     ]
+
+    drift_text, drift_source = _drift_summary(plan, result)
+    if drift_text:
+        lines.extend(
+            [
+                f"### Drift summary ({escaped(drift_source)})",
+                "",
+                escaped(drift_text),
+                "",
+            ]
+        )
+
+    if plan.ignored_metadata_keys:
+        lines.extend(
+            [
+                "### Ignored config keys",
+                "",
+                "Package identity is owned by the installed package, not by config. "
+                f"These reserved keys were ignored: <code>{escaped(serialize(plan.ignored_metadata_keys))}</code>.",
+                "",
+            ]
+        )
 
     if visible_actions:
         lines.extend(
@@ -451,7 +558,7 @@ def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
 
 
 def _print_header(plan: _Plan, mode: str) -> None:
-    print(f"bos-managed-file-sync {__version__}")
+    print(f"{plan.package['name']} {plan.package['version']}")
     print(f"config:    {plan.config_file or '(none — using inputs and defaults)'}")
     print(f"root:      {plan.root}")
     print(f"direction: {plan.direction}")
@@ -477,6 +584,7 @@ def _run_sync(plan: _Plan, dry_run: bool, fail_on_drift: bool, show_diff: bool =
         namespace=plan.namespace,
         note=plan.note,
         take_over_managed_files=plan.take_over_managed_files,
+        config_source=plan.config_source,
     )
     result = engine.sync(plan.services)
 
@@ -514,7 +622,26 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_OK
 
         if args.command == "validate":
+            print("Package metadata:")
+            print(f"  name:        {plan.package['name']}")
+            print(f"  version:     {plan.package['version']}")
+            print(f"  author:      {plan.package['author']}")
+            print(f"  description: {plan.package['description']}")
+            print("Config cascade:")
+            for source in plan.source_paths or ("(none — using inputs and defaults)",):
+                print(f"  - {source}")
+            if plan.ignored_metadata_keys:
+                print(
+                    "Ignored reserved package metadata keys: "
+                    + ", ".join(plan.ignored_metadata_keys)
+                )
+            print()
             _print_header(plan, "validate")
+            print(
+                "ai:        "
+                f"{'enabled' if plan.ai.enable_ai_drift_summary else 'disabled'} "
+                f"(provider: {plan.ai.ai_drift_summary_provider})"
+            )
             print("\nConfig is valid.")
             return EXIT_OK
 

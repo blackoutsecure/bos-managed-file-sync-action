@@ -16,11 +16,13 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from .ai import AISettings, settings_from_section
 from .errors import ConfigError
 from .markers import DEFAULT_NAMESPACE
+from .metadata import package_metadata, strip_package_metadata
 
 CONFIG_SECTION = "managed_file_sync"
-MARKETPLACE_CONFIG_FILE = "blackout-secure-managed-file-sync-marketplace-config.json"
+MARKETPLACE_CONFIG_FILE = "managed-file-sync-marketplace-config.json"
 DEFAULT_CONFIG_PATHS = (
     ".github/bos-universal-config.json",
     "bos-universal-config.json",
@@ -211,6 +213,7 @@ def load_repo_config(
     use_marketplace: bool = True,
     config_json: str | dict[str, Any] | None = None,
     global_config_json: str | dict[str, Any] | None = None,
+    ignored_metadata_keys: list[str] | None = None,
 ) -> dict[str, Any]:
     """Load and merge marketplace + global + repo + inline config.
 
@@ -220,6 +223,10 @@ def load_repo_config(
         3. Repo config (repo-specific overrides)
         4. Inline config JSON for each tier (highest-precedence override for workflow runs)
 
+    Package identity is not policy: reserved metadata keys are stripped from
+    every tier before merging, so config can never redefine the running kit's
+    name, version, author, or description.
+
     Args:
         config_file: repo-specific config file path (optional).
         global_config_file: org/hub-level config file path (optional).
@@ -227,6 +234,8 @@ def load_repo_config(
             Can be disabled by passing False or set in any config via use_marketplace_config: false.
         config_json: raw inline repo config JSON object or serialized object string.
         global_config_json: raw inline global config JSON object or serialized object string.
+        ignored_metadata_keys: optional list that receives the reserved package
+            metadata keys found (and dropped) across the cascade.
 
     Returns:
         Merged ``managed_file_sync`` section from all applicable tiers, or {} if none provided.
@@ -234,10 +243,19 @@ def load_repo_config(
     Raises:
         ConfigError: on invalid config file.
     """
-    global_section = _load_config_section(global_config_file)
-    global_inline_section = load_inline_config(global_config_json)
-    repo_section = _load_config_section(config_file)
-    repo_inline_section = load_inline_config(config_json)
+    dropped: list[str] = []
+
+    def without_metadata(section: dict[str, Any]) -> dict[str, Any]:
+        cleaned, ignored = strip_package_metadata(section)
+        for key in ignored:
+            if key not in dropped:
+                dropped.append(key)
+        return cleaned
+
+    global_section = without_metadata(_load_config_section(global_config_file))
+    global_inline_section = without_metadata(load_inline_config(global_config_json))
+    repo_section = without_metadata(_load_config_section(config_file))
+    repo_inline_section = without_metadata(load_inline_config(config_json))
 
     marketplace_enabled = use_marketplace
     for section in (
@@ -264,13 +282,21 @@ def load_repo_config(
             "use_marketplace_config",
             True,
         ):
-            merged = _merge_section(merged, marketplace_section)
+            merged = _merge_section(merged, without_metadata(marketplace_section))
 
     for section in (global_section, global_inline_section, repo_section, repo_inline_section):
         if section:
             merged = _merge_section(merged, section)
 
+    if ignored_metadata_keys is not None:
+        ignored_metadata_keys.extend(dropped)
+
     return merged
+
+
+def ai_settings(section: dict[str, Any]) -> AISettings:
+    """AI policy for this repo (opportunistic, with deterministic fallback)."""
+    return settings_from_section(section)
 
 
 def parse_service_list(value: str | None) -> list[str]:
@@ -335,8 +361,15 @@ def string_map(value: Any, key: str = "variables") -> dict[str, str]:
     return {str(name): str(val) for name, val in value.items()}
 
 
-def builtin_variables(overrides: dict[str, str] | None = None) -> dict[str, str]:
-    """Variables always available to templates, with normalized runner overrides."""
+def builtin_variables(
+    overrides: dict[str, str] | None = None,
+    config_source: str | None = None,
+) -> dict[str, str]:
+    """Variables always available to templates, with normalized runner overrides.
+
+    Package identity and ``config_source`` are applied last so config cannot
+    misreport which kit ran or which file configured it.
+    """
     overrides = overrides or {}
     repository = os.environ.get("GITHUB_REPOSITORY", "")
     owner, _, repo = repository.partition("/")
@@ -374,6 +407,7 @@ def builtin_variables(overrides: dict[str, str] | None = None) -> dict[str, str]
         "project_name": repo,
     }
     variables.update(overrides)
+    package = package_metadata()
     variables.update(
         {
             "fallback_default_runner": fallback,
@@ -382,6 +416,10 @@ def builtin_variables(overrides: dict[str, str] | None = None) -> dict[str, str]
             "RUNNER_ARM64": runner_arm64,
             "WORKLOAD_ARCH": workload_arch,
             "SELECTED_RUNNER": selected_runner,
+            "package_name": package["name"],
+            "package_title": package["title"],
+            "package_version": package["version"],
+            "config_source": config_source or MARKETPLACE_CONFIG_FILE,
         }
     )
     return variables

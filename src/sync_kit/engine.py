@@ -105,13 +105,14 @@ class SyncEngine:
         namespace: str = DEFAULT_NAMESPACE,
         note: str | None = None,
         take_over_managed_files: bool = False,
+        config_source: str | None = None,
     ) -> None:
         self.root = resolve_repo_root(root)
         self.dry_run = dry_run
         self.namespace = namespace
         self.note = note
         self.take_over_managed_files = take_over_managed_files
-        self.variables = builtin_variables(variables)
+        self.variables = builtin_variables(variables, config_source)
 
     def sync(self, services: Iterable[Service]) -> SyncResult:
         services = tuple(services)
