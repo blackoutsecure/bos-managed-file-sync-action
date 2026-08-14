@@ -1,9 +1,9 @@
 """Package identity, independent of repository policy configuration.
 
-Identity (name, version, author, description) is owned by the installed
-package — never by config. Reserved identity keys are stripped from every
-config tier before merging, so a repo, org, or inline override cannot rebrand
-or misreport the kit that is actually running.
+Identity (name, version, author, description, legal details, and official
+links) is owned by the installed package — never by config. Reserved identity
+keys are stripped from every config tier before merging, so a repo, org, or
+inline override cannot rebrand or misreport the kit that is actually running.
 """
 
 from __future__ import annotations
@@ -21,21 +21,66 @@ PACKAGE_DESCRIPTION = (
     "Config-driven managed-file sync — keep canonical repo files and managed "
     "blocks in sync across repositories."
 )
+PACKAGE_WEBSITE = "https://blackoutsecure.app"
+PACKAGE_REPOSITORY = "https://github.com/blackoutsecure/bos-managed-file-sync-action"
+PACKAGE_DOCUMENTATION = f"{PACKAGE_REPOSITORY}#readme"
+PACKAGE_ISSUES = f"{PACKAGE_REPOSITORY}/issues"
+PACKAGE_RELEASES = f"{PACKAGE_REPOSITORY}/releases"
+PACKAGE_MARKETPLACE = (
+    "https://github.com/marketplace/actions/blackout-secure-managed-file-sync"
+)
+PACKAGE_SUPPORT_EMAIL = "info@blackoutsecure.app"
+PACKAGE_LICENSE = "Apache-2.0"
+PACKAGE_COPYRIGHT = "Copyright © 2025-2026 Blackout Secure"
 
 # Config keys that describe the package rather than repo policy. Stripped from
 # every tier (marketplace, global, repo, inline) before the cascade is merged.
 RESERVED_METADATA_KEYS = (
     "author",
     "author_email",
+    "copyright",
     "description",
+    "documentation",
+    "homepage",
+    "issues",
     "license",
+    "maintainer",
+    "maintainer_email",
     "name",
     "package_author",
+    "package_copyright",
     "package_description",
+    "package_license",
     "package_name",
+    "package_repository",
     "package_version",
+    "package_website",
+    "releases",
+    "repository",
+    "support_email",
     "version",
+    "website",
 )
+
+
+def _identity(*, name: str, version: str, author: str, description: str) -> dict[str, str]:
+    return {
+        "name": name,
+        "title": PACKAGE_TITLE,
+        "version": version,
+        "author": author,
+        "author_email": PACKAGE_SUPPORT_EMAIL,
+        "description": description,
+        "website": PACKAGE_WEBSITE,
+        "repository": PACKAGE_REPOSITORY,
+        "documentation": PACKAGE_DOCUMENTATION,
+        "issues": PACKAGE_ISSUES,
+        "releases": PACKAGE_RELEASES,
+        "marketplace": PACKAGE_MARKETPLACE,
+        "support_email": PACKAGE_SUPPORT_EMAIL,
+        "license": PACKAGE_LICENSE,
+        "copyright": PACKAGE_COPYRIGHT,
+    }
 
 
 def package_metadata() -> dict[str, str]:
@@ -43,21 +88,19 @@ def package_metadata() -> dict[str, str]:
     try:
         installed = installed_metadata(PACKAGE_NAME)
     except PackageNotFoundError:
-        return {
-            "name": PACKAGE_NAME,
-            "title": PACKAGE_TITLE,
-            "version": __version__,
-            "author": PACKAGE_AUTHOR,
-            "description": PACKAGE_DESCRIPTION,
-        }
+        return _identity(
+            name=PACKAGE_NAME,
+            version=__version__,
+            author=PACKAGE_AUTHOR,
+            description=PACKAGE_DESCRIPTION,
+        )
 
-    return {
-        "name": installed.get("Name") or PACKAGE_NAME,
-        "title": PACKAGE_TITLE,
-        "version": installed.get("Version") or __version__,
-        "author": installed.get("Author") or PACKAGE_AUTHOR,
-        "description": installed.get("Summary") or PACKAGE_DESCRIPTION,
-    }
+    return _identity(
+        name=installed.get("Name") or PACKAGE_NAME,
+        version=installed.get("Version") or __version__,
+        author=installed.get("Author") or PACKAGE_AUTHOR,
+        description=installed.get("Summary") or PACKAGE_DESCRIPTION,
+    )
 
 
 def strip_package_metadata(

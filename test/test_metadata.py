@@ -17,6 +17,31 @@ def test_package_metadata_is_available_without_config():
     assert metadata["description"]
 
 
+def test_package_metadata_includes_official_links_and_legal_identity():
+    metadata = package_metadata()
+
+    assert metadata["website"] == "https://blackoutsecure.app"
+    assert metadata["repository"] == (
+        "https://github.com/blackoutsecure/bos-managed-file-sync-action"
+    )
+    assert metadata["documentation"] == (
+        "https://github.com/blackoutsecure/bos-managed-file-sync-action#readme"
+    )
+    assert metadata["issues"] == (
+        "https://github.com/blackoutsecure/bos-managed-file-sync-action/issues"
+    )
+    assert metadata["releases"] == (
+        "https://github.com/blackoutsecure/bos-managed-file-sync-action/releases"
+    )
+    assert metadata["marketplace"] == (
+        "https://github.com/marketplace/actions/blackout-secure-managed-file-sync"
+    )
+    assert metadata["author_email"] == "info@blackoutsecure.app"
+    assert metadata["support_email"] == "info@blackoutsecure.app"
+    assert metadata["license"] == "Apache-2.0"
+    assert metadata["copyright"] == "Copyright © 2025-2026 Blackout Secure"
+
+
 def test_package_metadata_falls_back_to_module_version(monkeypatch):
     import sync_kit.metadata as metadata_mod
 

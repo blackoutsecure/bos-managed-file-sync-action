@@ -270,13 +270,14 @@ def test_security_kicker_routes_dev_and_main_with_required_permissions():
     assert workflow.count("secrets: inherit") == 2
 
 
-def test_action_test_kicker_uses_stable_hub_workflow_read_only():
+def test_action_test_kicker_routes_to_branch_specific_hub_workflows_read_only():
     workflow = (
         GITHUB / "workflows/bos-universal-action-test-kicker.yml"
     ).read_text(encoding="utf-8")
 
-    assert workflow.count("workflows/bos-universal-action-test.yml@main") == 2
-    assert "workflows/bos-universal-action-test.yml@dev" not in workflow
+    assert workflow.count("workflows/bos-universal-action-test.yml@main") == 1
+    assert workflow.count("workflows/bos-universal-action-test.yml@dev") == 1
+    assert "name: Resolve target hub ref" in workflow
     assert "contents: write" not in workflow
     assert "secrets:" not in workflow
 
@@ -307,13 +308,43 @@ def test_codeql_caller_avoids_duplicate_pull_request_scanner():
 def test_package_constants_match_pyproject():
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     name = re.search(r'^name = "([^"]+)"', pyproject, re.MULTILINE)
-    author = re.search(r'^authors = \[\{name = "([^"]+)"\}\]', pyproject, re.MULTILINE)
+    author = re.search(
+        r'^authors = \[\{name = "([^"]+)", email = "([^"]+)"\}\]',
+        pyproject,
+        re.MULTILINE,
+    )
     description = re.search(r'^description = "([^"]+)"', pyproject, re.MULTILINE)
 
     assert name is not None and author is not None and description is not None
     assert name.group(1) == metadata.PACKAGE_NAME
     assert author.group(1) == metadata.PACKAGE_AUTHOR
+    assert author.group(2) == metadata.PACKAGE_SUPPORT_EMAIL
     assert description.group(1) == metadata.PACKAGE_DESCRIPTION
+    assert _toml_value(pyproject, "project", "license") == metadata.PACKAGE_LICENSE
+    assert _toml_value(pyproject, "project", "license-files") == ["LICENSE", "NOTICE"]
+    assert _toml_value(pyproject, "project.urls", "Homepage") == metadata.PACKAGE_WEBSITE
+    assert _toml_value(pyproject, "project.urls", "Repository") == metadata.PACKAGE_REPOSITORY
+    assert (
+        _toml_value(pyproject, "project.urls", "Documentation")
+        == metadata.PACKAGE_DOCUMENTATION
+    )
+    assert _toml_value(pyproject, "project.urls", "Issues") == metadata.PACKAGE_ISSUES
+    assert _toml_value(pyproject, "project.urls", "Changelog") == metadata.PACKAGE_RELEASES
+    assert _toml_value(pyproject, "project.urls", "Marketplace") == metadata.PACKAGE_MARKETPLACE
+
+
+def test_package_legal_identity_matches_readme_and_notice():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    notice = (ROOT / "NOTICE").read_text(encoding="utf-8")
+
+    assert metadata.PACKAGE_COPYRIGHT in readme
+    assert metadata.PACKAGE_COPYRIGHT.replace(" ©", "") in notice
+    assert metadata.PACKAGE_WEBSITE in readme
+
+
+def test_repo_metadata_uses_official_website():
+    config = _json(GITHUB / "bos-universal-config.json")
+    assert config["marketplace"]["repo_metadata"]["homepage"] == metadata.PACKAGE_WEBSITE
 
 
 def test_marketplace_config_declares_no_package_metadata():

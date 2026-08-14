@@ -515,6 +515,16 @@ def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
         f"| Name | <code>{escaped(plan.package['name'])}</code> |",
         f"| Version | <code>{escaped(plan.package['version'])}</code> |",
         f"| Author | <code>{escaped(plan.package['author'])}</code> |",
+        f"| Description | {escaped(plan.package['description'])} |",
+        f"| Website | [{escaped(plan.package['website'])}]({escaped(plan.package['website'])}) |",
+        f"| Repository | [{escaped(plan.package['repository'])}]({escaped(plan.package['repository'])}) |",
+        f"| Documentation | [{escaped(plan.package['documentation'])}]({escaped(plan.package['documentation'])}) |",
+        f"| Issues | [{escaped(plan.package['issues'])}]({escaped(plan.package['issues'])}) |",
+        f"| Releases | [{escaped(plan.package['releases'])}]({escaped(plan.package['releases'])}) |",
+        f"| Marketplace | [{escaped(plan.package['marketplace'])}]({escaped(plan.package['marketplace'])}) |",
+        f"| Support | [{escaped(plan.package['support_email'])}](mailto:{escaped(plan.package['support_email'])}) |",
+        f"| License | <code>{escaped(plan.package['license'])}</code> |",
+        f"| Copyright | {escaped(plan.package['copyright'])} |",
         "",
         "### Results",
         "",
@@ -783,6 +793,15 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  version:     {plan.package['version']}")
             print(f"  author:      {plan.package['author']}")
             print(f"  description: {plan.package['description']}")
+            print(f"  website:     {plan.package['website']}")
+            print(f"  repository:  {plan.package['repository']}")
+            print(f"  docs:        {plan.package['documentation']}")
+            print(f"  issues:      {plan.package['issues']}")
+            print(f"  releases:    {plan.package['releases']}")
+            print(f"  marketplace: {plan.package['marketplace']}")
+            print(f"  support:     {plan.package['support_email']}")
+            print(f"  license:     {plan.package['license']}")
+            print(f"  copyright:   {plan.package['copyright']}")
             print("Config cascade:")
             for source in plan.source_paths or ("(none — using inputs and defaults)",):
                 print(f"  - {source}")

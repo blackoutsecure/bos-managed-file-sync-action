@@ -18,7 +18,7 @@ run-name: >-
     - cron: '29 14 * * 1'
   push:
     paths:
-      - 'bos-universal-config.json'
+      - '.github/bos-universal-config.json'
   workflow_dispatch:
     inputs:
       mode:

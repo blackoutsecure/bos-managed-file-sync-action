@@ -8,8 +8,9 @@ dynamic = ["version"]
 description = "Config-driven managed-file sync — keep canonical repo files and managed blocks in sync across repositories."
 readme = "README.md"
 requires-python = ">=3.10"
-license = {file = "LICENSE"}
-authors = [{name = "Blackout Secure"}]
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{name = "Blackout Secure", email = "info@blackoutsecure.app"}]
 keywords = [
   "github",
   "actions",
@@ -47,9 +48,12 @@ dev = [
 bos-sync = "sync_kit.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/blackoutsecure/bos-managed-file-sync-action"
+Homepage = "https://blackoutsecure.app"
+Repository = "https://github.com/blackoutsecure/bos-managed-file-sync-action"
+Documentation = "https://github.com/blackoutsecure/bos-managed-file-sync-action#readme"
 Issues = "https://github.com/blackoutsecure/bos-managed-file-sync-action/issues"
-Source = "https://github.com/blackoutsecure/bos-managed-file-sync-action"
+Changelog = "https://github.com/blackoutsecure/bos-managed-file-sync-action/releases"
+Marketplace = "https://github.com/marketplace/actions/blackout-secure-managed-file-sync"
 
 [tool.pytest.ini_options]
 # Lets contributors run the suite without `pip install -e .`. CI still

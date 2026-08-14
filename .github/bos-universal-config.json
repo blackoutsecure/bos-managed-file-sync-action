@@ -42,7 +42,7 @@
     "include_github_metadata": false,
     "repo_metadata": {
       "enable": true,
-      "homepage": "https://github.com/marketplace/actions/blackout-secure-managed-file-sync",
+      "homepage": "https://blackoutsecure.app",
       "generate_topics": true,
       "topics_fallback": "github-actions code-scanning security sarif posture-audit gitleaks actionlint shellcheck composite-action devsecops github-advanced-security"
     }

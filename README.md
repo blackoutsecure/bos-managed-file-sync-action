@@ -5,6 +5,7 @@ Copyright © 2025-2026 Blackout Secure | Apache License 2.0
 [![Marketplace](https://img.shields.io/badge/GitHub%20Marketplace-blue?logo=github)](https://github.com/marketplace/actions/blackout-secure-managed-file-sync)
 [![GitHub release](https://img.shields.io/github/v/release/blackoutsecure/bos-managed-file-sync-action)](https://github.com/blackoutsecure/bos-managed-file-sync-action/releases)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+[![Website](https://img.shields.io/badge/website-blackoutsecure.app-1f1f1f)](https://blackoutsecure.app)
 [![Made by BlackoutSecure](https://img.shields.io/badge/made%20by-BlackoutSecure-1f1f1f)](https://github.com/blackoutsecure)
 
 A drop-in composite GitHub Action that reads JSON config → resolves a service
@@ -470,16 +471,26 @@ replacement services in `service_definitions` before enabling them.
 ### Package metadata is not policy
 
 Package identity is separate from this cascade. The kit's name, version,
-author, and description come from the installed package metadata
-(`pyproject.toml`) and remain available even when repository policy is absent,
-overridden, or fails to load.
+author, description, official website, repository, documentation, issue and
+release trackers, Marketplace listing, support contact, license, and copyright
+come from package-owned metadata and remain available even when repository
+policy is absent, overridden, or fails to load.
 
-The reserved keys `name`, `version`, `author`, `author_email`, `description`,
-`license`, `package_name`, `package_version`, `package_author`, and
-`package_description` are stripped from the top level of **every** tier before
-the merge, and the ignored keys are reported by `bos-sync validate` and in the
-job summary. Nested `service_definitions[*].description` is policy, not
-identity, and is preserved.
+Official links:
+
+- Website: <https://blackoutsecure.app>
+- Repository: <https://github.com/blackoutsecure/bos-managed-file-sync-action>
+- Documentation: <https://github.com/blackoutsecure/bos-managed-file-sync-action#readme>
+- Issues: <https://github.com/blackoutsecure/bos-managed-file-sync-action/issues>
+- Releases: <https://github.com/blackoutsecure/bos-managed-file-sync-action/releases>
+- Marketplace: <https://github.com/marketplace/actions/blackout-secure-managed-file-sync>
+- Support: <info@blackoutsecure.app>
+
+Identity-shaped keys, including `name`, `version`, `author`, `description`,
+`website`, `repository`, `support_email`, `license`, and `copyright`, are
+stripped from the top level of **every** tier before the merge. Ignored keys are
+reported by `bos-sync validate` and in the job summary. Nested
+`service_definitions[*].description` is policy, not identity, and is preserved.
 
 `bos-sync validate` prints package metadata and the applied config cascade
 before any policy output.

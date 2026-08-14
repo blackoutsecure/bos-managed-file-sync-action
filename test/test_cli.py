@@ -650,6 +650,11 @@ def test_validate_reports_package_identity_and_ignored_keys(repo, capsys):
 
     output = capsys.readouterr().out
     assert "name:        bos-managed-file-sync" in output
+    assert "website:     https://blackoutsecure.app" in output
+    assert "repository:  https://github.com/blackoutsecure/bos-managed-file-sync-action" in output
+    assert "support:     info@blackoutsecure.app" in output
+    assert "license:     Apache-2.0" in output
+    assert "copyright:   Copyright © 2025-2026 Blackout Secure" in output
     assert "9.9.9" not in output
     assert "Ignored reserved package metadata keys: name, version" in output
     assert "Config cascade:" in output
@@ -667,6 +672,16 @@ def test_summary_reports_package_and_drift_without_ai(repo, tmp_path, monkeypatc
     written = summary.read_text(encoding="utf-8")
     assert "### Package" in written
     assert "bos-managed-file-sync" in written
+    assert (
+        "| Website | [https://blackoutsecure.app](https://blackoutsecure.app) |"
+    ) in written
+    assert (
+        "| Repository | [https://github.com/blackoutsecure/"
+        "bos-managed-file-sync-action](https://github.com/blackoutsecure/"
+        "bos-managed-file-sync-action) |"
+    ) in written
+    assert "[info@blackoutsecure.app](mailto:info@blackoutsecure.app)" in written
+    assert "| Copyright | Copyright © 2025-2026 Blackout Secure |" in written
     assert "### Drift summary (local)" in written
     assert "**Confidence:** High (deterministic)" in written
     assert "**Source:** Blackout Secure deterministic rules" in written
