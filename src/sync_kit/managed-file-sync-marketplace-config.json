@@ -2,8 +2,19 @@
   "managed_file_sync": {
     "direction": "source-to-destination",
     "use_marketplace_config": true,
+    "use_marketplace_services": true,
     "marker_namespace": "managed-file-sync",
     "managed_note": "Managed by {{package_title}} — configure services in {{config_source}}.",
+    "managed_files_path": ".github/managed-files",
+    "take_over_managed_files": false,
+    "mode": "commit",
+    "generate_commit_message": true,
+    "fallback_commit_message": "chore: sync managed files",
+    "git_user_name": "github-actions[bot]",
+    "git_user_email": "41898282+github-actions[bot]@users.noreply.github.com",
+    "push_retries": 3,
+    "runs_on": "ubuntu-latest",
+    "timeout_minutes": 5,
     "services": [
       "common",
       "lf_line_endings",
@@ -13,9 +24,12 @@
       "editorconfig"
     ],
     "exclude_services": [],
+    "disabled_services": [],
     "ai": {
       "enable_ai_drift_summary": true,
       "ai_drift_summary_provider": "auto",
+      "enable_ai_error_remediation": true,
+      "ai_error_remediation_provider": "auto",
       "local_heuristic_fallback": true
     },
     "variables": {

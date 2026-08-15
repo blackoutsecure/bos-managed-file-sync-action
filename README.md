@@ -5,6 +5,7 @@ Copyright © 2025-2026 Blackout Secure | Apache License 2.0
 [![Marketplace](https://img.shields.io/badge/GitHub%20Marketplace-blue?logo=github)](https://github.com/marketplace/actions/blackout-secure-managed-file-sync)
 [![GitHub release](https://img.shields.io/github/v/release/blackoutsecure/bos-managed-file-sync-action)](https://github.com/blackoutsecure/bos-managed-file-sync-action/releases)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+[![Website](https://img.shields.io/badge/website-blackoutsecure.app-1f1f1f)](https://blackoutsecure.app)
 [![Made by BlackoutSecure](https://img.shields.io/badge/made%20by-BlackoutSecure-1f1f1f)](https://github.com/blackoutsecure)
 
 A drop-in composite GitHub Action that reads JSON config → resolves a service
@@ -46,14 +47,18 @@ is touched.
 - **Actionable outputs** — `changed`, `changed_count`, `changed_files`, and
   `changed_files_json` make it trivial to open a pull request only when
   something actually moved.
-- **Job summary** — every run writes package identity, a drift narrative, the
-  resolved configuration, service-level counts, and a file-by-file table.
+- **Job summary** — successful runs write package identity, a drift narrative,
+  resolved configuration, service-level counts, and file-by-file results.
+  Failed runs still write a formal report with the exact error, stable rule ID,
+  deterministic remediation, confidence, source, and optional AI guidance. Both
+  paths use the automation hub's canonical report headings and severity labels.
 - **Independent package metadata** — package identity remains available even
   when repository policy is absent, overridden, or not loaded, and reserved
   identity keys are stripped from every config tier.
-- **AI-assisted drift summary** — uses GitHub Models automatically when a usable
-  token is available, supports explicit OpenAI-compatible providers, and always
-  falls back to a deterministic local summary. Disable model calls with
+- **AI-assisted reporting** — uses GitHub Models automatically when a usable
+  token is available, supports explicit OpenAI-compatible providers, and can
+  summarize drift or recommend error remediation. Deterministic guidance is
+  always retained. Disable all model calls with
   `ai.enable_ai_drift_summary: false`.
 - **Pure-stdlib Python core** — no third-party runtime dependency at all. The
   composite Action invokes its bundled source directly, with no package install
@@ -64,7 +69,7 @@ is touched.
 - [📋 Prerequisites](#-prerequisites)
 - [🚀 Quick start](#-quick-start)
   - [Drift check on pull requests](#drift-check-on-pull-requests)
-  - [AI drift summaries and data handling](#ai-drift-summaries-and-data-handling)
+  - [AI reporting and data handling](#ai-reporting-and-data-handling)
   - [Version pinning](#version-pinning)
 - [⚙️ Action inputs](#️-action-inputs)
 - [📤 Action outputs](#-action-outputs)
@@ -81,6 +86,7 @@ is touched.
   - [Examples](#examples)
 - [📝 Config schema reference](#-config-schema-reference)
   - [Top-level keys](#top-level-keys)
+  - [Organization reporting](#organization-reporting)
   - [AI settings](#ai-settings)
   - [Template variables](#template-variables)
   - [Environment variables](#environment-variables)
@@ -101,8 +107,8 @@ is touched.
 - For drift checks: nothing beyond the default `contents: read`.
 - For committing fixes: `contents: write`, plus `pull-requests: write` when the
   workflow opens a PR.
-- Optional for AI drift summaries: `models: read` and a token with GitHub
-  Models access.
+- Optional for AI drift summaries and error remediation: `models: read`. The
+  action supplies the workflow token to GitHub Models inside its sync step.
 
 ## 🚀 Quick start
 
@@ -183,17 +189,23 @@ jobs:
 The job fails with a list of out-of-sync files and never writes to the working
 tree.
 
-### AI drift summaries and data handling
+### AI reporting and data handling
 
 AI is enabled in `auto` mode by the bundled Marketplace config and is always
 opportunistic. The action looks for GitHub Models credentials first, then uses
 an explicitly configured external provider when its endpoint and credential are
 both available. If no provider is usable, or a request fails, the run continues
-with the deterministic local summary.
+with deterministic local guidance.
 
-Only drift metadata — file path, service name, and action — is ever sent to a
-model, and only when a provider is detected. File contents and diffs are never
-transmitted. To prohibit model calls for an organization or repository:
+For drift summaries, only file path, service name, and action are sent. For
+failure remediation, only the error category, exact error text, reported
+location, and deterministic remediation are sent. Config documents, managed
+file contents, diffs, and credentials are never sent. Model output is advisory:
+it cannot change the finding, severity, deterministic recommendation, exit code,
+or files written by the sync engine.
+
+To prohibit every model call for an organization or repository while retaining
+deterministic summaries and remediation:
 
 ```json
 {
@@ -202,6 +214,9 @@ transmitted. To prohibit model calls for an organization or repository:
   }
 }
 ```
+
+To keep AI drift summaries but disable only AI error remediation, set
+`ai.enable_ai_error_remediation` to `false`.
 
 See [AI settings](#ai-settings) for the full schema and provider environment
 variables.
@@ -264,11 +279,37 @@ The SHA for any tag is `git rev-list -n 1 v1.0.0` against this repo, or the
 
 ## 📊 Job summary
 
-Every GitHub Actions run writes a job summary containing package identity, the
-drift narrative (AI-assisted or local), the resolved configuration and config
-cascade, action and service breakdowns, and a file-by-file result table.
-Reserved package-metadata keys found in config are reported as ignored. Rows
-with no entries are omitted to keep the summary compact.
+When GitHub Actions provides `GITHUB_STEP_SUMMARY` and
+`organization.reporting.enable_job_summary` is enabled, the action writes a job
+summary containing package identity, the drift narrative (AI-assisted or local),
+the resolved configuration and config cascade, action and service breakdowns,
+and a file-by-file result table. Reserved package-metadata keys found in config
+are reported as ignored. Rows with no entries are omitted to keep the summary
+compact.
+
+Configuration, marker, path-safety, and filesystem failures also write a
+best-effort report even when configuration resolution stopped before a normal
+sync plan existed. The failure report includes an executive verdict,
+configuration context, a stable `MFS-*` rule, exact evidence and location,
+deterministic remediation with source/confidence, optional AI-assisted
+remediation with provider/confidence, and the report methodology. Failure-report
+I/O or AI availability never masks the original annotation or exit code.
+
+Success and failure reports use the same top-level layout as the automation
+hub: **Executive summary**, **Configuration used**, **Recommended Actions**, and
+**Detailed Findings**.
+
+| Machine severity | Report label | Meaning |
+| --- | --- | --- |
+| `pass` | Pass | The control was evaluated and satisfied. |
+| `warn` | Warning | Advisory drift was found and review is recommended. |
+| `fail` | High | A required control failed and must be corrected. |
+| `skip` | Not Assessed | The control was not evaluated; compliance cannot be inferred. |
+
+The reusable `bos-automation-hub` workflow owns standalone HTML/PDF rendering
+and authenticated artifact upload through its shared `job-report` action. This
+composite action emits the raw drift outputs and its direct-invocation Markdown
+summary; it does not upload artifacts or generate a duplicate rich report.
 
 | State | Meaning |
 | --- | --- |
@@ -450,16 +491,26 @@ replacement services in `service_definitions` before enabling them.
 ### Package metadata is not policy
 
 Package identity is separate from this cascade. The kit's name, version,
-author, and description come from the installed package metadata
-(`pyproject.toml`) and remain available even when repository policy is absent,
-overridden, or fails to load.
+author, description, official website, repository, documentation, issue and
+release trackers, Marketplace listing, support contact, license, and copyright
+come from package-owned metadata and remain available even when repository
+policy is absent, overridden, or fails to load.
 
-The reserved keys `name`, `version`, `author`, `author_email`, `description`,
-`license`, `package_name`, `package_version`, `package_author`, and
-`package_description` are stripped from the top level of **every** tier before
-the merge, and the ignored keys are reported by `bos-sync validate` and in the
-job summary. Nested `service_definitions[*].description` is policy, not
-identity, and is preserved.
+Official links:
+
+- Website: <https://blackoutsecure.app>
+- Repository: <https://github.com/blackoutsecure/bos-managed-file-sync-action>
+- Documentation: <https://github.com/blackoutsecure/bos-managed-file-sync-action#readme>
+- Issues: <https://github.com/blackoutsecure/bos-managed-file-sync-action/issues>
+- Releases: <https://github.com/blackoutsecure/bos-managed-file-sync-action/releases>
+- Marketplace: <https://github.com/marketplace/actions/blackout-secure-managed-file-sync>
+- Support: <info@blackoutsecure.app>
+
+Identity-shaped keys, including `name`, `version`, `author`, `description`,
+`website`, `repository`, `support_email`, `license`, and `copyright`, are
+stripped from the top level of **every** tier before the merge. Ignored keys are
+reported by `bos-sync validate` and in the job summary. Nested
+`service_definitions[*].description` is policy, not identity, and is preserved.
 
 `bos-sync validate` prints package metadata and the applied config cascade
 before any policy output.
@@ -524,16 +575,34 @@ or a destination-local `content_file`; names alone are rejected.
 
 ## 📝 Config schema reference
 
-Per-repo policy lives in the `managed_file_sync` section of a JSON config file.
-A document without that key is treated as the section itself. Every field is
-optional and unknown keys are ignored, so newer versions can extend the schema
-without breaking older callers.
+Per-repo sync policy lives in the `managed_file_sync` section of a JSON config
+file. Universal configs may use `sync` as a grouped alias. If both keys are
+present, the explicit `managed_file_sync` section wins. A document without
+either key is treated as the sync section itself. When an external policy owner
+such as the automation hub supplies a full universal config, the action also
+retains top-level `organization`, `security`, `marketplace`, and `general`
+companion sections for reporting. Those sections are not bundled defaults.
+Every field is optional and unknown keys are ignored, so newer versions can
+extend the schema without breaking older callers.
 
 ```json
 {
   "managed_file_sync": {
     "services": ["common", "lf_line_endings", "editorconfig"],
     "variables": { "owner": "Example Org" }
+  }
+}
+```
+
+The equivalent grouped universal-config form is:
+
+```json
+{
+  "sync": {
+    "services": ["common", "lf_line_endings", "editorconfig"]
+  },
+  "organization": {
+    "reporting": { "title_prefix": "Example Org" }
   }
 }
 ```
@@ -567,6 +636,48 @@ Services can also be toggled with an object, which suits generated configs:
 | `take_over_managed_files` | boolean | `false` | When `true`, removes competing managed blocks for the same service; when `false`, the run fails instead. |
 | `ai` | object | see below | AI-assisted drift summary policy. |
 
+### Organization reporting
+
+Reporting policy lives at top-level `organization.reporting`, outside the sync
+section. The direct action consumes the Markdown title, job-summary, and
+annotation controls. The reusable automation-hub workflow consumes the same
+policy when it renders and uploads the standalone audit report.
+
+| Key | Default | Owner and behavior |
+| --- | --- | --- |
+| `enable_job_summary` | `true` | Direct action and hub: write `$GITHUB_STEP_SUMMARY`; `false` suppresses it. |
+| `enable_annotations` | `true` | Direct action and hub: emit GitHub `error`/`warning` workflow annotations; plain stderr remains visible when disabled. |
+| `enable_html` | `true` | Hub: generate the standalone HTML audit report. |
+| `enable_pdf` | `false` | Hub: attempt PDF export when Chrome or Chromium is available. |
+| `html_path` | `blackout-secure-report.html` | Hub: workspace path for HTML output. |
+| `pdf_path` | `blackout-secure-report.pdf` | Hub: workspace path for optional PDF output. |
+| `artifact_name` | `blackout-secure-audit-report` | Hub workflow: authenticated Actions artifact name. |
+| `title_prefix` | `Blackout Secure` | Direct action and hub: prefix generated report titles. |
+| `fail_on` | `fail` | Hub report step: `fail`, `warn`, or `never`. Direct action exits remain controlled by sync errors and `fail_on_drift`. |
+
+```json
+{
+  "organization": {
+    "reporting": {
+      "enable_job_summary": true,
+      "enable_annotations": true,
+      "enable_html": true,
+      "enable_pdf": false,
+      "html_path": "blackout-secure-report.html",
+      "pdf_path": "blackout-secure-report.pdf",
+      "artifact_name": "blackout-secure-audit-report",
+      "title_prefix": "Blackout Secure",
+      "fail_on": "fail"
+    }
+  }
+}
+```
+
+The published action intentionally does not bundle organization security gates,
+Marketplace publication metadata, action-test matrices, or repository-owned
+universal config. The automation hub supplies those companion sections through
+its global or inline config when it invokes this action.
+
 ### AI settings
 
 ```json
@@ -575,6 +686,8 @@ Services can also be toggled with an object, which suits generated configs:
     "ai": {
       "enable_ai_drift_summary": true,
       "ai_drift_summary_provider": "auto",
+      "enable_ai_error_remediation": true,
+      "ai_error_remediation_provider": "auto",
       "local_heuristic_fallback": true
     }
   }
@@ -583,8 +696,10 @@ Services can also be toggled with an object, which suits generated configs:
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `ai.enable_ai_drift_summary` | boolean | `true` | `false` prohibits all model calls for this org or repo. |
+| `ai.enable_ai_drift_summary` | boolean | `true` | Enables AI drift summaries. For backward compatibility, `false` is also the master switch that prohibits all model calls. |
 | `ai.ai_drift_summary_provider` | string | `auto` | `auto`, `none`, `github-models`, or an external OpenAI-compatible provider name. |
+| `ai.enable_ai_error_remediation` | boolean | `true` | Adds advisory AI remediation to failure reports. Deterministic remediation is always shown. |
+| `ai.ai_error_remediation_provider` | string | drift provider | `auto`, `none`, `github-models`, or an external OpenAI-compatible provider name. |
 | `ai.local_heuristic_fallback` | boolean | `true` | Keeps the deterministic summary when no provider is usable. |
 
 ### Template variables
@@ -624,7 +739,7 @@ array string of labels (`["ubuntu-latest"]`); anything else falls back to
 | `RUNNER_ARCH` | Templates | Auto-detects runner architecture for `{{SELECTED_RUNNER}}`. |
 | `MFS_WORKLOAD_ARCH` | Action step | Set from the `workload_arch` input. |
 | `GITHUB_OUTPUT`, `GITHUB_STEP_SUMMARY` | Reporting | Emit action outputs and the job summary; skipped when unset. |
-| `GITHUB_MODELS_TOKEN`, `GITHUB_TOKEN` | AI | Credential for GitHub Models, in that order. |
+| `GITHUB_MODELS_TOKEN`, `GITHUB_TOKEN` | AI | Credential for GitHub Models, in that order. The composite step supplies `github.token` as `GITHUB_TOKEN`. |
 | `GITHUB_MODELS_ENDPOINT`, `GITHUB_MODELS_MODEL` | AI | Optional endpoint and model overrides; endpoints must be HTTPS. |
 | `<PROVIDER>_API_KEY`, `<PROVIDER>_API_ENDPOINT`, `<PROVIDER>_MODEL` | AI | External provider settings, for example `OPENAI_API_KEY`. |
 | `AI_API_KEY`, `AI_API_ENDPOINT` | AI | Generic fallbacks for an external provider. |
@@ -718,7 +833,7 @@ repository.
   before any write.
 - **Bundles cannot cycle.** `includes` is expanded with a depth limit and a
   clear error instead of looping.
-- **Network access is optional.** Only the AI drift summary can make an outbound
+- **Network access is optional.** Only AI reporting can make an outbound
   request; the sync path itself never touches the network.
 
 ## 🔐 Security and safety
@@ -732,10 +847,12 @@ repository.
   targets cannot themselves be symlinks.
 - **No code execution.** Service definitions are pure data. The engine never
   evaluates content, shells out, or fetches remote URLs.
-- **Constrained AI egress.** The optional drift summary requires an HTTPS
-  endpoint plus an explicit credential, sends drift metadata only, and degrades
-  to the local summary on any failure. `ai.enable_ai_drift_summary: false`
-  prohibits it entirely.
+- **Constrained AI egress.** Optional AI reporting requires an HTTPS endpoint
+  plus an explicit credential. Drift requests send path/service/action metadata;
+  remediation requests send error category/text/location and the deterministic
+  recommendation. Config documents, managed-file contents, diffs, and
+  credentials are excluded. Every provider failure degrades to deterministic
+  guidance, and `ai.enable_ai_drift_summary: false` prohibits AI entirely.
 - **Identity cannot be spoofed by config.** Package name, version, author, and
   description are read from the installed package; the matching config keys are
   stripped from every tier before merging.

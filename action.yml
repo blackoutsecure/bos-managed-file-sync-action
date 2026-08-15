@@ -121,6 +121,7 @@ runs:
         MFS_DRY_RUN:             ${{ inputs.dry_run }}
         MFS_FAIL_ON_DRIFT:       ${{ inputs.fail_on_drift }}
         MFS_SHOW_DIFF:           ${{ inputs.show_diff }}
+        GITHUB_TOKEN:            ${{ github.token }}
       run: |
         set -euo pipefail
 
@@ -131,7 +132,7 @@ runs:
           true) args+=(--use-global-config) ;;
           false) args+=(--no-global-config) ;;
           *)
-            echo "::error::use_global_config must be 'auto', 'true', or 'false'" >&2
+            echo "use_global_config must be 'auto', 'true', or 'false'" >&2
             exit 2
             ;;
         esac

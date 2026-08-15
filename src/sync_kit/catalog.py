@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .config import find_config, load_repo_config, marker_identifier
+from .config import CONFIG_SECTION, find_config, load_repo_config, marker_identifier
 from .errors import ConfigError
 from .paths import normalize_relative_path, read_utf8_file_inside, resolve_inside
 
@@ -272,10 +272,17 @@ def resolve_services(
     )
 
     if unknown:
+        missing_paths = ", ".join(
+            f"{CONFIG_SECTION}.service_definitions.{name}"
+            for name in sorted(set(unknown))
+        )
+        available = ", ".join(sorted(catalog)) or "(none)"
         raise ConfigError(
-            "unknown service(s): "
-            + ", ".join(sorted(unknown))
-            + f". Known services: {', '.join(sorted(catalog))}"
+            f"missing service definition schema(s): {missing_paths}. "
+            f"Each name selected by '{CONFIG_SECTION}.services', the workflow "
+            f"'services' input, or a service 'includes' entry must have a matching "
+            f"object under '{CONFIG_SECTION}.service_definitions'. "
+            f"Available service definitions: {available}"
         )
     check_conflicts(resolved)
     return resolved

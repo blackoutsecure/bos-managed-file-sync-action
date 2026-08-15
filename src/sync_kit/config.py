@@ -23,6 +23,7 @@ from .metadata import package_metadata, strip_package_metadata
 
 CONFIG_SECTION = "managed_file_sync"
 MARKETPLACE_CONFIG_FILE = "managed-file-sync-marketplace-config.json"
+COMPANION_CONFIG_SECTIONS = ("organization", "security", "marketplace", "general")
 DEFAULT_CONFIG_PATHS = (
     ".github/bos-universal-config.json",
     "bos-universal-config.json",
@@ -146,6 +147,16 @@ def _merge_section(base: dict[str, Any], override: dict[str, Any]) -> dict[str, 
     return merged
 
 
+def _load_config_document(config_file: Path | None) -> dict[str, Any]:
+    """Read and validate a config document without extracting a section."""
+    if config_file is None:
+        return {}
+    data = load_json(config_file)
+    if not isinstance(data, dict):
+        raise ConfigError(f"config root must be a JSON object: {config_file}")
+    return data
+
+
 def _load_config_section(config_file: Path | None) -> dict[str, Any]:
     """Read the ``managed_file_sync`` section from a config file.
 
@@ -154,17 +165,43 @@ def _load_config_section(config_file: Path | None) -> dict[str, Any]:
     """
     if config_file is None:
         return {}
-    data = load_json(config_file)
-    if not isinstance(data, dict):
-        raise ConfigError(f"config root must be a JSON object: {config_file}")
-    section = data.get(CONFIG_SECTION, data)
+    data = _load_config_document(config_file)
+    return _extract_config_section(data, source=str(config_file))
+
+
+def _extract_config_section(data: dict[str, Any], *, source: str) -> dict[str, Any]:
+    """Return managed-sync policy plus universal companion sections.
+
+    Universal config keeps security, Marketplace publication, and general
+    action-test policy beside ``managed_file_sync``. Those sections do not
+    control file reconciliation, but retaining them in the cascade lets the
+    bundled tier provide recommendations and the run report show effective
+    repository overrides. Top-level universal sections win over same-tier
+    nested values, matching the hub's universal-config precedence.
+    """
+    section_key = CONFIG_SECTION if CONFIG_SECTION in data else "sync" if "sync" in data else None
+    section = data.get(section_key, data) if section_key else data
     if not isinstance(section, dict):
-        raise ConfigError(f"'{CONFIG_SECTION}' must be a JSON object: {config_file}")
-    return section
+        raise ConfigError(f"'{section_key}' must be a JSON object: {source}")
+    if section_key is None:
+        return section
+
+    merged = dict(section)
+    for name in COMPANION_CONFIG_SECTIONS:
+        companion = data.get(name)
+        if companion is None:
+            continue
+        if not isinstance(companion, dict):
+            raise ConfigError(f"'{name}' must be a JSON object: {source}")
+        nested = merged.get(name)
+        if nested is not None and not isinstance(nested, dict):
+            raise ConfigError(f"'{CONFIG_SECTION}.{name}' must be a JSON object: {source}")
+        merged[name] = _deep_merge(nested or {}, companion)
+    return merged
 
 
-def load_inline_config(raw: str | dict[str, Any] | None) -> dict[str, Any]:
-    """Parse an inline JSON object and return the managed_file_sync section."""
+def _load_inline_document(raw: str | dict[str, Any] | None) -> dict[str, Any]:
+    """Parse and validate an inline config without extracting a section."""
     if raw is None:
         return {}
     if isinstance(raw, dict):
@@ -180,10 +217,71 @@ def load_inline_config(raw: str | dict[str, Any] | None) -> dict[str, Any]:
             raise ConfigError(f"invalid inline config JSON: {exc}") from exc
     if not isinstance(data, dict):
         raise ConfigError("inline config JSON must decode to an object")
-    section = data.get(CONFIG_SECTION, data)
-    if not isinstance(section, dict):
-        raise ConfigError("'managed_file_sync' must be a JSON object in the inline config")
-    return section
+    return data
+
+
+def load_inline_config(raw: str | dict[str, Any] | None) -> dict[str, Any]:
+    """Parse an inline JSON object and return the managed_file_sync section."""
+    data = _load_inline_document(raw)
+    return _extract_config_section(data, source="inline config")
+
+
+def _extract_companion_section(
+    data: dict[str, Any],
+    name: str,
+    *,
+    source: str,
+) -> dict[str, Any]:
+    """Extract one companion section without requiring valid sync policy."""
+    section_key = CONFIG_SECTION if CONFIG_SECTION in data else "sync" if "sync" in data else None
+    nested: dict[str, Any] = {}
+    if section_key is not None:
+        section = data.get(section_key)
+        if isinstance(section, dict):
+            nested_value = section.get(name)
+            if nested_value is not None and not isinstance(nested_value, dict):
+                raise ConfigError(f"'{section_key}.{name}' must be a JSON object: {source}")
+            nested = dict(nested_value or {})
+
+    companion = data.get(name)
+    if companion is None:
+        return nested
+    if not isinstance(companion, dict):
+        raise ConfigError(f"'{name}' must be a JSON object: {source}")
+    return _deep_merge(nested, companion)
+
+
+def load_companion_config(
+    name: str,
+    *,
+    config_file: Path | None = None,
+    global_config_file: Path | None = None,
+    config_json: str | dict[str, Any] | None = None,
+    global_config_json: str | dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Merge one universal companion independently of managed-sync validity.
+
+    This recovery-oriented cascade lets error reporting honor organization
+    policy even when another config section cannot be loaded. Built-in report
+    defaults remain owned by the report settings model.
+    """
+    if name not in COMPANION_CONFIG_SECTIONS:
+        raise ConfigError(f"unsupported companion config section: {name}")
+
+    sources = (
+        (_load_config_document(global_config_file), str(global_config_file)),
+        (_load_inline_document(global_config_json), "inline global config"),
+        (_load_config_document(config_file), str(config_file)),
+        (_load_inline_document(config_json), "inline repository config"),
+    )
+    merged: dict[str, Any] = {}
+    for document, source in sources:
+        if document:
+            merged = _deep_merge(
+                merged,
+                _extract_companion_section(document, name, source=source),
+            )
+    return merged
 
 
 def _load_bundled_config(path: str, *, label: str) -> dict[str, Any]:
@@ -194,10 +292,9 @@ def _load_bundled_config(path: str, *, label: str) -> dict[str, Any]:
             files.joinpath(path).read_text(encoding="utf-8")
         )
 
-        section = config_data.get(CONFIG_SECTION, config_data)
-        if not isinstance(section, dict):
-            raise ConfigError(f"{label} config must contain a 'managed_file_sync' object")
-        return section
+        if not isinstance(config_data, dict):
+            raise ConfigError(f"{label} config root must be a JSON object")
+        return _extract_config_section(config_data, source=f"{label} config")
     except Exception as exc:
         raise ConfigError(f"failed to load {label} config: {exc}") from exc
 
