@@ -130,7 +130,7 @@ def test_kickers_use_hub_shared_ref_resolver():
     for workflow in workflows:
         document = workflow.read_text(encoding="utf-8")
         assert (
-            "uses: blackoutsecure/bos-automation-hub/.github/actions/shared/resolve-hub-ref@main"
+            "uses: blackoutsecure/bos-automation-hub/.github/actions/shared/resolve-hub-ref@dev"
             in document
         )
         assert "case \"${EVENT_NAME}\" in" not in document

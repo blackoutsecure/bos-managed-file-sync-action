@@ -42,7 +42,7 @@ jobs:
       # run targets here and pick the matching static-ref job below.
       - name: Resolve target hub ref
         id: target_ref
-        uses: blackoutsecure/bos-automation-hub/.github/actions/shared/resolve-hub-ref@main
+        uses: blackoutsecure/bos-automation-hub/.github/actions/shared/resolve-hub-ref@dev
         with:
           event_name: ${{ github.event_name }}
           ref_name: ${{ github.ref_name }}
