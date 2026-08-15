@@ -38,11 +38,17 @@ jobs:
     outputs:
       target_ref: ${{ steps.target_ref.outputs.ref }}
     steps:
-      # `uses:` refs cannot be dynamic, so resolve which hub branch this
-      # run targets here and pick the matching static-ref job below.
+      - name: Checkout hub resolver
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: blackoutsecure/bos-automation-hub
+          ref: ${{ github.ref_name == 'dev' && 'dev' || 'main' }}
+          path: hub-runtime
+          sparse-checkout: .github/actions/shared/resolve-hub-ref
+          sparse-checkout-cone-mode: false
       - name: Resolve target hub ref
         id: target_ref
-        uses: blackoutsecure/bos-automation-hub/.github/actions/shared/resolve-hub-ref@dev
+        uses: ./hub-runtime/.github/actions/shared/resolve-hub-ref
         with:
           event_name: ${{ github.event_name }}
           ref_name: ${{ github.ref_name }}
