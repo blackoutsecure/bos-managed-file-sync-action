@@ -105,9 +105,9 @@ def test_public_bundle_contains_only_action_owned_config():
         assert "Customize via `.github/bos-universal-config.json`, not this file." in document
         assert "Customize via `bos-universal-config.json`, not this file." not in document
 
-    marketplace_workflow = (
-        GITHUB / "workflows/bos-universal-marketplace-kicker.yml"
-    ).read_text(encoding="utf-8")
+    marketplace_workflow = (GITHUB / "workflows/bos-universal-marketplace-kicker.yml").read_text(
+        encoding="utf-8"
+    )
     assert "config_path: .github/bos-universal-config.json" in marketplace_workflow
 
     section = load_repo_config(config_file=None, global_config_file=None)
@@ -132,11 +132,9 @@ def test_kickers_use_hub_shared_ref_resolver():
         assert "name: Checkout hub resolver" in document
         assert "sparse-checkout: .github/actions/shared/resolve-hub-ref" in document
         assert "uses: ./hub-runtime/.github/actions/shared/resolve-hub-ref" in document
-        assert "case \"${EVENT_NAME}\" in" not in document
+        assert 'case "${EVENT_NAME}" in' not in document
 
-    security = (GITHUB / "workflows/bos-universal-security-kicker.yml").read_text(
-        encoding="utf-8"
-    )
+    security = (GITHUB / "workflows/bos-universal-security-kicker.yml").read_text(encoding="utf-8")
     assert "merge_group_base_ref: ${{ github.event.merge_group.base_ref }}" in security
 
 
@@ -197,9 +195,9 @@ def test_isolated_bootstrap_ignores_consumer_sync_kit_package(tmp_path):
 
 def test_managed_files_path_input_defers_to_merged_config():
     action = (ROOT / "action.yml").read_text(encoding="utf-8")
-    managed_files_input = action.split("  managed_files_path:", 1)[1].split(
-        "  workload_arch:", 1
-    )[0]
+    managed_files_input = action.split("  managed_files_path:", 1)[1].split("  workload_arch:", 1)[
+        0
+    ]
 
     assert "default: ''" in managed_files_input
 
@@ -228,7 +226,7 @@ def test_codeql_caller_avoids_duplicate_pull_request_scanner():
 
     assert "workflows/security-scan.yml@main" in workflow
     assert "enable_kit_composite: ${{ github.event_name != 'pull_request' }}" in workflow
-    assert "codeql_languages: '[\"python\", \"actions\"]'" in workflow
+    assert 'codeql_languages: \'["python", "actions"]\'' in workflow
 
 
 def test_package_constants_match_pyproject():
@@ -250,10 +248,7 @@ def test_package_constants_match_pyproject():
     assert _toml_value(pyproject, "project", "license-files") == ["LICENSE", "NOTICE"]
     assert _toml_value(pyproject, "project.urls", "Homepage") == metadata.PACKAGE_WEBSITE
     assert _toml_value(pyproject, "project.urls", "Repository") == metadata.PACKAGE_REPOSITORY
-    assert (
-        _toml_value(pyproject, "project.urls", "Documentation")
-        == metadata.PACKAGE_DOCUMENTATION
-    )
+    assert _toml_value(pyproject, "project.urls", "Documentation") == metadata.PACKAGE_DOCUMENTATION
     assert _toml_value(pyproject, "project.urls", "Issues") == metadata.PACKAGE_ISSUES
     assert _toml_value(pyproject, "project.urls", "Changelog") == metadata.PACKAGE_RELEASES
     assert _toml_value(pyproject, "project.urls", "Marketplace") == metadata.PACKAGE_MARKETPLACE

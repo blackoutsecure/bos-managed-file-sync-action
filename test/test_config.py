@@ -27,7 +27,9 @@ def test_finds_default_config_name(repo):
 
 def test_prefers_dotgithub_universal_config_when_both_exist(repo):
     repo.write_config({"services": ["common"]}, name="bos-universal-config.json")
-    preferred = repo.write_config({"services": ["python"]}, name=".github/bos-universal-config.json")
+    preferred = repo.write_config(
+        {"services": ["python"]}, name=".github/bos-universal-config.json"
+    )
     assert find_config(repo.root) == preferred
 
 
@@ -68,23 +70,27 @@ def test_section_defaults_to_root_object(repo):
 def test_inline_config_merges_as_highest_precedence(repo):
     repo_path = repo.write(
         "bos-universal-config.json",
-        json.dumps({
-            "managed_file_sync": {
-                "services": ["common"],
-                "variables": {"project_name": "repo-project"},
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "services": ["common"],
+                    "variables": {"project_name": "repo-project"},
+                }
             }
-        }),
+        ),
     )
 
     config = load_repo_config(
         repo_path,
         use_marketplace=False,
-        config_json=json.dumps({
-            "managed_file_sync": {
-                "services": ["prettier"],
-                "variables": {"project_name": "inline-project"},
+        config_json=json.dumps(
+            {
+                "managed_file_sync": {
+                    "services": ["prettier"],
+                    "variables": {"project_name": "inline-project"},
+                }
             }
-        }),
+        ),
     )
 
     assert config["services"] == ["common", "prettier"]
@@ -132,33 +138,39 @@ def test_inline_config_must_decode_to_object():
 def test_inline_global_config_merges_below_repo_config(repo):
     global_path = repo.write(
         ".github/blackout-secure-managed-file-sync-global-config.json",
-        json.dumps({
-            "managed_file_sync": {
-                "services": ["editorconfig"],
-                "variables": {"org_name": "global-org", "shared": "global-value"},
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "services": ["editorconfig"],
+                    "variables": {"org_name": "global-org", "shared": "global-value"},
+                }
             }
-        }),
+        ),
     )
     repo_path = repo.write(
         "bos-universal-config.json",
-        json.dumps({
-            "managed_file_sync": {
-                "services": ["common"],
-                "variables": {"project_name": "repo-project", "shared": "repo-value"},
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "services": ["common"],
+                    "variables": {"project_name": "repo-project", "shared": "repo-value"},
+                }
             }
-        }),
+        ),
     )
 
     config = load_repo_config(
         repo_path,
         global_path,
         use_marketplace=False,
-        global_config_json=json.dumps({
-            "managed_file_sync": {
-                "services": ["prettier"],
-                "variables": {"org_name": "inline-global", "shared": "inline-value"},
+        global_config_json=json.dumps(
+            {
+                "managed_file_sync": {
+                    "services": ["prettier"],
+                    "variables": {"org_name": "inline-global", "shared": "inline-value"},
+                }
             }
-        }),
+        ),
     )
 
     assert config["services"] == ["editorconfig", "prettier", "common"]
@@ -193,6 +205,13 @@ def test_take_over_managed_files_defaults_off_and_can_be_enabled():
 
     assert take_over_managed_files({}) is False
     assert take_over_managed_files({"take_over_managed_files": True}) is True
+
+
+def test_cleanup_duplicate_lines_defaults_off_and_can_be_enabled():
+    from sync_kit.config import cleanup_duplicate_lines
+
+    assert cleanup_duplicate_lines({}) is False
+    assert cleanup_duplicate_lines({"cleanup_duplicate_lines": True}) is True
 
 
 def test_sync_direction_defaults_and_accepts_one_way_mode():
@@ -246,13 +265,13 @@ def test_builtin_runner_variables_default_to_fallback(monkeypatch):
 def test_builtin_runner_variables_use_valid_env_values(monkeypatch):
     monkeypatch.setenv("DEFAULT_RUNNER", "ubuntu-latest")
     monkeypatch.setenv("RUNNER_X64", "ubuntu-24.04")
-    monkeypatch.setenv("RUNNER_ARM64", "[\"ubuntu-24.04-arm\"]")
+    monkeypatch.setenv("RUNNER_ARM64", '["ubuntu-24.04-arm"]')
 
     variables = builtin_variables()
 
     assert variables["DEFAULT_RUNNER"] == "ubuntu-latest"
     assert variables["RUNNER_X64"] == "ubuntu-24.04"
-    assert variables["RUNNER_ARM64"] == "[\"ubuntu-24.04-arm\"]"
+    assert variables["RUNNER_ARM64"] == '["ubuntu-24.04-arm"]'
 
 
 def test_builtin_runner_variables_invalid_env_values_fallback(monkeypatch):
@@ -489,12 +508,14 @@ def test_repo_config_merges_with_marketplace(repo):
     """Repo config appends services to marketplace by default and merges variables."""
     repo_path = repo.write(
         "bos-universal-config.json",
-        json.dumps({
-            "managed_file_sync": {
-                "services": ["common", "prettier"],
-                "variables": {"project_name": "test-project"},
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "services": ["common", "prettier"],
+                    "variables": {"project_name": "test-project"},
+                }
             }
-        }),
+        ),
     )
     config = load_repo_config(repo_path, use_marketplace=True)
     # Services append to marketplace defaults by default.
@@ -517,24 +538,28 @@ def test_global_and_repo_configs_merge(repo):
     """Global config should merge with repo config."""
     global_path = repo.write(
         ".github/blackout-secure-managed-file-sync-global-config.json",
-        json.dumps({
-            "managed_file_sync": {
-                "services": ["common", "editorconfig"],
-                "variables": {
-                    "org_name": "my-org",
-                    "support_email": "platform@my-org.com",
-                },
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "services": ["common", "editorconfig"],
+                    "variables": {
+                        "org_name": "my-org",
+                        "support_email": "platform@my-org.com",
+                    },
+                }
             }
-        }),
+        ),
     )
     repo_path = repo.write(
         "bos-universal-config.json",
-        json.dumps({
-            "managed_file_sync": {
-                "services": ["common", "prettier"],
-                "variables": {"project_name": "my-project"},
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "services": ["common", "prettier"],
+                    "variables": {"project_name": "my-project"},
+                }
             }
-        }),
+        ),
     )
     config = load_repo_config(repo_path, global_path, use_marketplace=False)
     # Repo services append to global by default.
@@ -548,21 +573,25 @@ def test_marketplace_global_and_repo_cascade(repo):
     """All three tiers should merge in cascade."""
     global_path = repo.write(
         ".github/blackout-secure-managed-file-sync-global-config.json",
-        json.dumps({
-            "managed_file_sync": {
-                "services": ["common", "editorconfig"],
-                "variables": {"org_name": "my-org"},
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "services": ["common", "editorconfig"],
+                    "variables": {"org_name": "my-org"},
+                }
             }
-        }),
+        ),
     )
     repo_path = repo.write(
         "bos-universal-config.json",
-        json.dumps({
-            "managed_file_sync": {
-                "services": ["common", "prettier"],
-                "variables": {"project_name": "my-project"},
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "services": ["common", "prettier"],
+                    "variables": {"project_name": "my-project"},
+                }
             }
-        }),
+        ),
     )
     config = load_repo_config(repo_path, global_path, use_marketplace=True)
     # Marketplace + global + repo cascade
@@ -578,6 +607,36 @@ def test_marketplace_global_and_repo_cascade(repo):
     assert config["variables"]["org_name"] == "my-org"  # Global
     assert config["variables"]["project_name"] == "my-project"  # Repo
     assert "exclude_paths" not in config
+
+
+def test_repo_disabled_services_win_over_org_enabled_services(repo):
+    """An org-level `services` entry never overrides a repo's own opt-out.
+
+    Models the real scenario: the org global config turns a bundled,
+    opt-in service (e.g. `coverage_artifacts`) on for every repo, but one
+    repo wants to keep publishing that artifact (e.g. a Pages-hosted
+    coverage badge) and disables just that service for itself. The more
+    restrictive setting — repo-level `disabled_services` — always wins,
+    regardless of which tier enabled the service.
+    """
+    from sync_kit.catalog import load_catalog, resolve_services
+
+    global_path = repo.write(
+        ".github/blackout-secure-managed-file-sync-global-config.json",
+        json.dumps({"managed_file_sync": {"services": ["coverage_artifacts"]}}),
+    )
+    repo_path = repo.write(
+        "bos-universal-config.json",
+        json.dumps({"managed_file_sync": {"disabled_services": ["coverage_artifacts"]}}),
+    )
+
+    config = load_repo_config(repo_path, global_path, use_marketplace=True)
+    assert "coverage_artifacts" in config["services"]
+
+    services = resolve_services(
+        load_catalog(root=repo.root, section=config, section_is_merged=True), config
+    )
+    assert "coverage_artifacts" not in [service.name for service in services]
 
 
 def test_use_marketplace_services_false_replaces_instead_of_appending(repo):
@@ -650,7 +709,9 @@ def test_exclude_services_lists_are_appended(repo):
 def test_use_marketplace_services_must_be_boolean(repo):
     repo_path = repo.write(
         "bos-universal-config.json",
-        json.dumps({"managed_file_sync": {"use_marketplace_services": "false", "services": ["common"]}}),
+        json.dumps(
+            {"managed_file_sync": {"use_marketplace_services": "false", "services": ["common"]}}
+        ),
     )
     with pytest.raises(ConfigError):
         load_repo_config(repo_path, use_marketplace=True)
@@ -709,7 +770,9 @@ def test_repo_config_can_disable_ai(repo):
 
 
 def test_package_identity_variables_cannot_be_overridden():
-    variables = builtin_variables({"package_name": "evil", "package_title": "Evil", "package_version": "9.9.9"})
+    variables = builtin_variables(
+        {"package_name": "evil", "package_title": "Evil", "package_version": "9.9.9"}
+    )
     assert variables["package_name"] == "bos-managed-file-sync"
     assert variables["package_title"] == "Blackout Secure Managed File Sync"
     assert variables["package_version"] != "9.9.9"
@@ -717,6 +780,6 @@ def test_package_identity_variables_cannot_be_overridden():
 
 def test_config_source_variable_defaults_to_the_marketplace_file():
     assert builtin_variables()["config_source"] == "managed-file-sync-marketplace-config.json"
-    assert builtin_variables(config_source=".github/bos-universal-config.json")["config_source"] == (
-        ".github/bos-universal-config.json"
-    )
+    assert builtin_variables(config_source=".github/bos-universal-config.json")[
+        "config_source"
+    ] == (".github/bos-universal-config.json")

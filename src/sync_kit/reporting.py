@@ -57,9 +57,7 @@ def reporting_settings(section: dict[str, Any]) -> ReportingSettings:
 
     fail_on = _reporting_text(reporting, "fail_on", "fail").lower()
     if fail_on not in {"fail", "warn", "never"}:
-        raise ConfigError(
-            "'organization.reporting.fail_on' must be 'fail', 'warn', or 'never'"
-        )
+        raise ConfigError("'organization.reporting.fail_on' must be 'fail', 'warn', or 'never'")
 
     html_path = normalize_relative_path(
         _reporting_text(reporting, "html_path", "blackout-secure-report.html"),

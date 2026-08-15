@@ -173,6 +173,52 @@ def test_content_outside_block_is_preserved(repo):
     assert "local-only" in repo.read(".gitignore")
 
 
+def test_cleanup_duplicate_lines_defaults_off(repo):
+    repo.write(".gitignore", ".venv/\n")
+    SyncEngine(repo.root).sync([service("common", "block", ".gitignore", ".venv/")])
+
+    gitignore = repo.read(".gitignore")
+    assert ".venv/" in gitignore.split("# >>> managed-file-sync:common >>>")[0]
+
+
+def test_cleanup_duplicate_lines_removes_matching_line_outside_block(repo):
+    repo.write(".gitignore", "local-only\n.venv/\nnode_modules/\n")
+
+    SyncEngine(repo.root, cleanup_duplicate_lines=True).sync(
+        [service("common", "block", ".gitignore", "node_modules/\n.venv/")]
+    )
+
+    gitignore = repo.read(".gitignore")
+    before_block = gitignore.split("# >>> managed-file-sync:common >>>")[0]
+    assert "local-only" in before_block
+    assert ".venv/" not in before_block
+    assert "node_modules/" not in before_block
+    assert gitignore.count(".venv/") == 1
+    assert gitignore.count("node_modules/") == 1
+
+
+def test_cleanup_duplicate_lines_never_touches_another_services_block(repo):
+    repo.write(
+        ".gitignore",
+        "# >>> managed-file-sync:other >>>\nnode_modules/\n# <<< managed-file-sync:other <<<\n",
+    )
+
+    SyncEngine(repo.root, cleanup_duplicate_lines=True).sync(
+        [service("common", "block", ".gitignore", "node_modules/")]
+    )
+
+    gitignore = repo.read(".gitignore")
+    assert "# >>> managed-file-sync:other >>>\nnode_modules/\n" in gitignore
+
+
+def test_cleanup_duplicate_lines_does_not_apply_to_file_mode(repo):
+    repo.write("config.json", '{"a": 1}\n')
+    SyncEngine(repo.root, cleanup_duplicate_lines=True).sync(
+        [service("cfg", "file", "config.json", '{"a": 1}')]
+    )
+    assert repo.read("config.json") == '{"a": 1}\n'
+
+
 def test_custom_namespace_is_used(repo):
     engine = SyncEngine(repo.root, namespace="bos-automation-hub")
     engine.sync([service("common", "block", ".gitignore", "managed")])
@@ -289,9 +335,7 @@ def test_final_symlink_swap_cannot_modify_an_in_repo_file(repo, monkeypatch):
     monkeypatch.setattr(engine_module, "resolve_inside", swap_final_after_check)
 
     with pytest.raises(ConfigError, match="failed to read"):
-        SyncEngine(repo.root).sync(
-            [service("bad", "file", "target.txt", "overwrite")]
-        )
+        SyncEngine(repo.root).sync([service("bad", "file", "target.txt", "overwrite")])
 
     assert victim.read_text(encoding="utf-8") == "keep\n"
 
@@ -365,9 +409,7 @@ def test_created_file_uses_native_umask_and_default_acl_policy(repo, monkeypatch
         os.close(descriptor)
 
         def reject_process_wide_umask_change(mode):
-            raise AssertionError(
-                f"sync must not inspect umask by changing it to {mode:#o}"
-            )
+            raise AssertionError(f"sync must not inspect umask by changing it to {mode:#o}")
 
         monkeypatch.setattr(engine_module.os, "umask", reject_process_wide_umask_change)
         SyncEngine(repo.root).sync([service("private", "file", "private.txt", "secret")])
@@ -449,9 +491,7 @@ def test_concurrent_parent_symlink_swap_cannot_redirect_write(repo, monkeypatch)
     monkeypatch.setattr(engine_module, "_atomic_write_bytes", swap_parent)
 
     with pytest.raises(ConfigError, match="failed to update"):
-        SyncEngine(repo.root).sync(
-            [service("new", "file", "managed/new.txt", "managed")]
-        )
+        SyncEngine(repo.root).sync([service("new", "file", "managed/new.txt", "managed")])
 
     assert not (outside / "new.txt").exists()
 

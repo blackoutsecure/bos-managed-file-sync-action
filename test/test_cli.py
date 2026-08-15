@@ -420,9 +420,7 @@ def test_failure_summary_can_be_disabled_by_organization_policy(repo, monkeypatc
     assert not summary_file.exists()
 
 
-def test_failure_summary_adds_ai_remediation_when_provider_is_available(
-    repo, monkeypatch
-):
+def test_failure_summary_adds_ai_remediation_when_provider_is_available(repo, monkeypatch):
     summary_file = repo.root / "gh_summary.md"
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_file))
     monkeypatch.setenv("GITHUB_TOKEN", "token")
@@ -457,9 +455,7 @@ def test_failure_summary_adds_ai_remediation_when_provider_is_available(
     assert "High (deterministic)" in summary
 
 
-def test_invalid_json_report_does_not_call_ai_when_policy_cannot_be_resolved(
-    repo, monkeypatch
-):
+def test_invalid_json_report_does_not_call_ai_when_policy_cannot_be_resolved(repo, monkeypatch):
     summary_file = repo.root / "gh_summary.md"
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_file))
     monkeypatch.setenv("GITHUB_TOKEN", "token")
@@ -668,7 +664,9 @@ def test_github_summary_reports_file_and_service_results(repo, monkeypatch):
     assert "<code>clean</code> | 1 | 0 | 0" in summary
     assert "<code>drifted</code> | 0 | 1 | 1" in summary
     assert "| **Total** | 1 | 1 | 1 |" in summary
-    assert "| Compliant | <code>clean.txt</code> | <code>clean</code> | Already compliant |" in summary
+    assert (
+        "| Compliant | <code>clean.txt</code> | <code>clean</code> | Already compliant |" in summary
+    )
     assert "| Pending | <code>drifted.txt</code> | <code>drifted</code> | Created |" in summary
     assert "### Review recommendations" in summary
     assert "### Full config review" in summary
@@ -766,7 +764,10 @@ def test_github_summary_distinguishes_disabled_services_from_compliance(repo, mo
 
     summary = summary_file.read_text(encoding="utf-8")
     assert "### Managed file sync: filtered" in summary
-    assert "No active managed files were evaluated; configured services were excluded or disabled." in summary
+    assert (
+        "No active managed files were evaluated; configured services were excluded or disabled."
+        in summary
+    )
     assert "### Service selection" in summary
     assert "| Requested | <code>common</code> |" in summary
     assert "| Resolved | <code>(none)</code> |" in summary
@@ -853,7 +854,9 @@ def test_cli_managed_files_path_override(repo):
                     "service_definitions": {
                         "custom": {
                             "mode": "file",
-                            "files": [{"path": "MANAGED.txt", "content_file": "templates/custom.txt"}],
+                            "files": [
+                                {"path": "MANAGED.txt", "content_file": "templates/custom.txt"}
+                            ],
                         }
                     },
                 }
@@ -934,9 +937,7 @@ def test_summary_reports_package_and_drift_without_ai(repo, tmp_path, monkeypatc
     written = summary.read_text(encoding="utf-8")
     assert "### Package" in written
     assert "bos-managed-file-sync" in written
-    assert (
-        "| Website | [https://blackoutsecure.app](https://blackoutsecure.app) |"
-    ) in written
+    assert ("| Website | [https://blackoutsecure.app](https://blackoutsecure.app) |") in written
     assert (
         "| Repository | [https://github.com/blackoutsecure/"
         "bos-managed-file-sync-action](https://github.com/blackoutsecure/"

@@ -8,6 +8,7 @@ from sync_kit.errors import MarkerError
 from sync_kit.markers import (
     apply_block,
     comment_prefix_for,
+    dedupe_lines_outside_block,
     marker_lines,
     render_block,
     supports_comments,
@@ -23,11 +24,7 @@ def test_appends_block_when_markers_absent():
 
 def test_replaces_block_in_place_and_preserves_surroundings():
     original = (
-        "top\n"
-        "# >>> managed-file-sync:common >>>\n"
-        "old\n"
-        "# <<< managed-file-sync:common <<<\n"
-        "bottom\n"
+        "top\n# >>> managed-file-sync:common >>>\nold\n# <<< managed-file-sync:common <<<\nbottom\n"
     )
     result = apply_block(original, "common", "new", "#")
     assert "new" in result
@@ -37,11 +34,7 @@ def test_replaces_block_in_place_and_preserves_surroundings():
 
 
 def test_service_name_does_not_match_a_longer_marker_name():
-    original = (
-        "# >>> managed-file-sync:foo-bar >>>\n"
-        "keep\n"
-        "# <<< managed-file-sync:foo-bar <<<\n"
-    )
+    original = "# >>> managed-file-sync:foo-bar >>>\nkeep\n# <<< managed-file-sync:foo-bar <<<\n"
     result = apply_block(original, "foo", "new", "#")
 
     assert "keep" in result
@@ -126,6 +119,56 @@ def test_markdown_uses_wrapping_comments():
     result = apply_block("", "docs", "text", comment_prefix_for("README.md"))
     assert "<!-- >>> managed-file-sync:docs >>> -->" in result
     assert "<!-- <<< managed-file-sync:docs <<< -->" in result
+
+
+def test_dedupe_removes_exact_duplicate_line_outside_block():
+    existing = apply_block(".venv/\nother-thing\n", "common", "node_modules/\n.venv/", "#")
+
+    result = dedupe_lines_outside_block(existing, "node_modules/\n.venv/", "#")
+
+    assert ".venv/" not in result.split("# >>> managed-file-sync:common >>>")[0]
+    assert "other-thing" in result
+    assert result.count(".venv/") == 1  # only the copy inside the managed block survives
+
+
+def test_dedupe_leaves_non_duplicate_lines_untouched():
+    existing = apply_block("keep-me\n", "common", "node_modules/", "#")
+
+    result = dedupe_lines_outside_block(existing, "node_modules/", "#")
+
+    assert "keep-me\n" in result
+
+
+def test_dedupe_never_touches_lines_inside_any_managed_block():
+    existing = (
+        "# >>> managed-file-sync:other >>>\n"
+        "node_modules/\n"
+        "# <<< managed-file-sync:other <<<\n"
+    )
+    existing = apply_block(existing, "common", "unrelated", "#")
+
+    result = dedupe_lines_outside_block(existing, "node_modules/", "#")
+
+    assert "# >>> managed-file-sync:other >>>\nnode_modules/\n" in result
+
+
+def test_dedupe_ignores_blank_lines():
+    existing = apply_block("\n\n", "common", "\nnode_modules/", "#")
+
+    before = dedupe_lines_outside_block(existing, "\nnode_modules/", "#").split(
+        "# >>> managed-file-sync:common >>>"
+    )[0]
+
+    assert before.strip("\n") == ""
+    assert before.count("\n") == existing.split("# >>> managed-file-sync:common >>>")[0].count("\n")
+
+
+def test_dedupe_is_a_no_op_when_block_content_is_only_blank_lines():
+    existing = apply_block("node_modules/\n", "common", "", "#")
+
+    result = dedupe_lines_outside_block(existing, "", "#")
+
+    assert result.startswith("node_modules/\n")
 
 
 def test_custom_namespace_round_trips():

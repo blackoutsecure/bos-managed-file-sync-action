@@ -1,3 +1,5 @@
+"""Tests for AI provider detection and interaction module."""
+
 from __future__ import annotations
 
 import json
@@ -47,7 +49,9 @@ def test_non_https_endpoint_is_rejected():
         )
         is None
     )
-    assert detect_provider(environ={"GITHUB_TOKEN": "t", "GITHUB_MODELS_ENDPOINT": "http://x"}) is None
+    assert (
+        detect_provider(environ={"GITHUB_TOKEN": "t", "GITHUB_MODELS_ENDPOINT": "http://x"}) is None
+    )
 
 
 def test_settings_default_to_opportunistic_ai():
@@ -104,7 +108,9 @@ def test_summarize_returns_none_when_provider_unreachable():
         environ={"OPENAI_API_KEY": "key", "OPENAI_API_ENDPOINT": "https://127.0.0.1:1"},
     )
     assert provider is not None
-    assert summarize([{"path": "a", "service": "b", "action": "update"}], provider, timeout=1) is None
+    assert (
+        summarize([{"path": "a", "service": "b", "action": "update"}], provider, timeout=1) is None
+    )
 
 
 def test_error_recommendation_sends_only_allowlisted_metadata(monkeypatch):

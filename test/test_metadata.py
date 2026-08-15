@@ -1,3 +1,5 @@
+"""Tests for package metadata resolution and bundled fallback handling."""
+
 from __future__ import annotations
 
 from sync_kit import __version__
