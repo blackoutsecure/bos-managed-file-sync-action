@@ -375,7 +375,8 @@ def test_created_file_uses_native_umask_and_default_acl_policy(repo, monkeypatch
         set_umask(previous_umask)
 
     assert stat_mode(repo.root / "private.txt") == stat_mode(probe)
-    assert os.listxattr(repo.root / "private.txt") == os.listxattr(probe)
+    if hasattr(os, "listxattr"):
+        assert os.listxattr(repo.root / "private.txt") == os.listxattr(probe)
 
 
 def test_invalid_utf8_content_is_rejected_before_any_write(repo):

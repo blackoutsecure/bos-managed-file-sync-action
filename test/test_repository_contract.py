@@ -129,10 +129,9 @@ def test_kickers_use_hub_shared_ref_resolver():
 
     for workflow in workflows:
         document = workflow.read_text(encoding="utf-8")
-        assert (
-            "uses: blackoutsecure/bos-automation-hub/.github/actions/shared/resolve-hub-ref@dev"
-            in document
-        )
+        assert "name: Checkout hub resolver" in document
+        assert "sparse-checkout: .github/actions/shared/resolve-hub-ref" in document
+        assert "uses: ./hub-runtime/.github/actions/shared/resolve-hub-ref" in document
         assert "case \"${EVENT_NAME}\" in" not in document
 
     security = (GITHUB / "workflows/bos-universal-security-kicker.yml").read_text(
