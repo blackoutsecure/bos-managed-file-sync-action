@@ -15,9 +15,10 @@ DEFAULT_SERVICES = (
     "dependabot_actions",
     "editorconfig",
     "shellcheck",
+    "yamllint",
     "prettier",
     "markdownlint",
-        "dependabot_pip",
+    "dependabot_pip",
 )
 
 
@@ -28,7 +29,9 @@ def test_default_catalog_contains_expected_service(repo, name):
 
 def test_quality_baseline_bundle_adds_optional_quality_services(repo):
     catalog = load_catalog(repo.root)
-    assert [service.name for service in resolve_services(catalog, {"services": ["quality_baseline"]})] == [
+    assert [
+        service.name for service in resolve_services(catalog, {"services": ["quality_baseline"]})
+    ] == [
         "common",
         "lf_line_endings",
         "editorconfig",
@@ -36,6 +39,7 @@ def test_quality_baseline_bundle_adds_optional_quality_services(repo):
         "dependabot_actions",
         "dependabot_pip",
         "shellcheck",
+        "yamllint",
         "prettier",
     ]
 
@@ -62,7 +66,9 @@ def test_custom_service_layers_on_top_of_marketplace_defaults(repo):
 
 def test_rejects_path_traversal():
     with pytest.raises(ConfigError):
-        parse_service("evil", {"mode": "file", "files": [{"path": "../outside.txt", "content": "x"}]})
+        parse_service(
+            "evil", {"mode": "file", "files": [{"path": "../outside.txt", "content": "x"}]}
+        )
 
 
 def test_rejects_absolute_path():
@@ -150,9 +156,7 @@ def test_rejects_managed_files_base_swapped_to_external_symlink(repo, monkeypatc
                 "service_definitions": {
                     "safe": {
                         "mode": "file",
-                        "files": [
-                            {"path": "out.txt", "content_file": "body.txt"}
-                        ],
+                        "files": [{"path": "out.txt", "content_file": "body.txt"}],
                     }
                 },
             },
@@ -211,11 +215,7 @@ def test_rejects_comment_prefix_with_control_characters():
     with pytest.raises(ConfigError, match="comment_prefix"):
         parse_service(
             "bad",
-            {
-                "files": [
-                    {"path": "a.txt", "content": "x", "comment_prefix": "#\n::warning::"}
-                ]
-            },
+            {"files": [{"path": "a.txt", "content": "x", "comment_prefix": "#\n::warning::"}]},
         )
 
 

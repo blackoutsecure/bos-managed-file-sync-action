@@ -345,18 +345,35 @@ individual entry in `files` can override it.
 | `common` | block | `.gitignore` | ✅ |
 | `lf_line_endings` | block | `.gitattributes` | ✅ |
 | `editorconfig` | block | `.editorconfig` | ✅ |
-| `markdownlint` | file | `.markdownlint.json` | ✅ |
+| `markdownlint` | file (+ `absent` cleanup) | `.markdownlint.yaml`; retires the legacy `.markdownlint.json` | ✅ |
 | `dependabot_actions` | block | `.github/dependabot.yml` | ✅ |
 | `dependabot_pip` | block | `.github/dependabot.yml` | ✅ |
 | `shellcheck` | block | `.shellcheckrc` | — |
+| `yamllint` | file | `.yamllint.yml` | — |
+| `coverage_artifacts` | block | `.gitignore` | — |
 | `prettier` | block + init | `.prettierignore`, `.prettierrc.json` | — |
 | `baseline` | bundle | `common`, `lf_line_endings`, `editorconfig`, `markdownlint`, `dependabot_actions`, `dependabot_pip` | — |
-| `quality_baseline` | bundle | `baseline`, `shellcheck`, `prettier` | — |
+| `quality_baseline` | bundle | `baseline`, `shellcheck`, `yamllint`, `prettier` | — |
+
+`markdownlint` migrated from `.markdownlint.json` to `.markdownlint.yaml`
+(the richer, better-commented format) using a second `files` entry in
+`absent` mode targeting the old path — the recommended pattern for retiring
+a managed file's format without leaving a stale duplicate that a tool might
+prefer over the new one (markdownlint-cli resolves `.markdownlint.json`
+before `.markdownlint.yaml` when both exist, silently shadowing the intended
+config).
 
 `prettier` intentionally mixes modes: `.prettierignore` inherits the
 service-level `block` mode, while `.prettierrc.json` overrides it with `init`.
 Strict JSON cannot carry comment markers, and `init` lets a repository
 customize its formatter config without later being overwritten.
+
+`coverage_artifacts` ignores `.coverage`, `.coverage.*`, `coverage.xml`, and
+`htmlcov/` — opt-in, since some repos intentionally commit or publish those
+(e.g. a Pages-hosted coverage badge). A higher tier (e.g. an org global
+config) can enable it for every repo by adding it to `services`; any repo can
+still opt back out for itself with `disabled_services: ["coverage_artifacts"]`
+— a repo's own exclusion always wins over another tier's enablement.
 
 `editorconfig` and `prettier` have distinct ownership boundaries:
 
@@ -423,7 +440,6 @@ not Marketplace defaults. Define them in global or repository
 | `.nvmrc` | `init` | Node version is a project decision. |
 | `.python-version` | `init` | Python version is a project and deployment decision. |
 | `.tool-versions` | `init` | A shared version-manager file must match the repository toolchain. |
-| `.yamllint` | `file` or `init` | YAML rules vary across projects and may conflict with existing policy. |
 | `.codespellrc` | `file` or `init` | Ignore lists and dictionaries are repository-specific. |
 | `.git-blame-ignore-revs` | `file` | History policy should be authored by the repository. |
 
@@ -634,6 +650,7 @@ Services can also be toggled with an object, which suits generated configs:
 | `marker_namespace` | string | `managed-file-sync` | Marker namespace for managed blocks. |
 | `managed_note` | string or array | see below | Provenance note written into managed blocks and file headers. |
 | `take_over_managed_files` | boolean | `false` | When `true`, removes competing managed blocks for the same service; when `false`, the run fails instead. |
+| `cleanup_duplicate_lines` | boolean | `false` | When `true`, after a managed block is written, lines outside ANY managed block that exactly duplicate one of its lines are removed (e.g. a hand-added `.venv/` in `.gitignore` once a `common` block also ignores it). Never touches content inside a managed block, this service's or another's. |
 | `ai` | object | see below | AI-assisted drift summary policy. |
 
 ### Organization reporting
