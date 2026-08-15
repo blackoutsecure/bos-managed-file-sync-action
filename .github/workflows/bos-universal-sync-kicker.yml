@@ -1,7 +1,7 @@
 # Managed by Blackout Secure Managed File Sync — configure services in .github/bos-universal-config.json.
 # Do not edit — every sync run overwrites this file.
 # Blackout Secure managed file sync kicker (hub-managed).
-# Customize via `bos-universal-config.json`, not this file.
+# Customize via `.github/bos-universal-config.json`, not this file.
 # Schema docs: https://github.com/blackoutsecure/bos-automation-hub
 name: Blackout Secure managed file sync (kicker)
 run-name: >-
@@ -42,12 +42,10 @@ jobs:
       # run targets here and pick the matching static-ref job below.
       - name: Resolve target hub ref
         id: target_ref
-        env:
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          ref="main"
-          [ "${REF_NAME}" = "dev" ] && ref="dev"
-          echo "ref=${ref}" >> "${GITHUB_OUTPUT}"
+        uses: blackoutsecure/bos-automation-hub/.github/actions/shared/resolve-hub-ref@main
+        with:
+          event_name: ${{ github.event_name }}
+          ref_name: ${{ github.ref_name }}
 
   sync-dev:
     name: Sync managed files (dev)

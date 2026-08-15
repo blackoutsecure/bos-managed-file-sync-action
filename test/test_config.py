@@ -91,6 +91,39 @@ def test_inline_config_merges_as_highest_precedence(repo):
     assert config["variables"]["project_name"] == "inline-project"
 
 
+def test_grouped_sync_alias_matches_managed_file_sync_section(repo):
+    grouped = repo.write(
+        "grouped.json",
+        json.dumps(
+            {
+                "sync": {"services": ["common"]},
+                "organization": {"reporting": {"title_prefix": "Example Org"}},
+            }
+        ),
+    )
+
+    config = load_repo_config(grouped, use_marketplace=False)
+
+    assert config["services"] == ["common"]
+    assert config["organization"]["reporting"]["title_prefix"] == "Example Org"
+
+
+def test_flat_managed_file_sync_section_wins_over_grouped_sync_alias(repo):
+    config_path = repo.write(
+        "mixed.json",
+        json.dumps(
+            {
+                "managed_file_sync": {"services": ["common"]},
+                "sync": {"services": ["prettier"]},
+            }
+        ),
+    )
+
+    config = load_repo_config(config_path, use_marketplace=False)
+
+    assert config["services"] == ["common"]
+
+
 def test_inline_config_must_decode_to_object():
     with pytest.raises(ConfigError, match="object"):
         load_repo_config(config_json="[]")
@@ -320,58 +353,19 @@ def test_marketplace_config_is_loaded_by_default():
     assert "exclude_paths" not in config
 
 
-def test_marketplace_config_includes_recommended_toolchain_and_policy():
+def test_marketplace_config_contains_only_action_owned_defaults():
     config = load_repo_config(None, use_marketplace=True)
-    expected_packages = ["pytest>=8.0", "ruff>=0.6", "PyYAML>=6.0"]
-
-    assert config["recommended_toolchain"] == {
-        "advisory": True,
-        "python": {
-            "requires": ">=3.10",
-            "default_version": "3.12",
-            "tested_versions": ["3.10", "3.11", "3.12"],
-        },
-        "dependencies": {
-            "build": ["hatchling>=1.27"],
-            "runtime": [],
-            "development": expected_packages,
-        },
+    assert not {"organization", "security", "marketplace", "general"} & set(config)
+    assert set(config) >= {
+        "direction",
+        "marker_namespace",
+        "services",
+        "service_definitions",
+        "ai",
     }
-    assert config["security"] == {
-        "enable_lint": True,
-        "enable_node_lint": False,
-        "node_version": "20",
-        "enable_python_lint": True,
-        "python_version": "3.12",
-        "python_packages": expected_packages,
-        "enable_shell_lint": False,
-        "enable_dependency_review": True,
-        "enable_code_scan": True,
-        "enable_pinned_actions_check": True,
-        "enable_pr_title_check": True,
-        "pr_title_types": "feat,fix,docs,style,refactor,perf,test,build,ci,chore,revert",
-        "enable_readme_header_check": True,
-        "readme_header_profile": "marketplace",
-        "code_scan_fail_on": "fail",
-        "code_scan_http_timeout": "20",
-    }
-    assert config["general"]["action_test"] == {
-        "python_versions": ["3.10", "3.11", "3.12"],
-        "os_matrix": ["ubuntu-latest"],
-        "python_packages": expected_packages,
-        "pytest_args": "-q",
-        "enable_smoke_test": False,
-        "smoke_trigger": "push-dev",
-        "smoke_test_config": {},
-        "timeout_pytest": 10,
-        "timeout_smoke": 5,
-    }
-    assert config["marketplace"]["target_branch"] == "main"
-    assert config["marketplace"]["include_dependabot_config"] is True
-    assert config["marketplace"]["include_github_metadata"] is False
 
 
-def test_top_level_universal_sections_override_marketplace_recommendations(repo):
+def test_external_companion_sections_are_retained_without_bundled_defaults(repo):
     repo_path = repo.write(
         "bos-universal-config.json",
         json.dumps(
@@ -386,16 +380,35 @@ def test_top_level_universal_sections_override_marketplace_recommendations(repo)
 
     config = load_repo_config(repo_path, use_marketplace=True)
 
-    assert config["security"]["python_version"] == "3.11"
-    assert config["security"]["enable_python_lint"] is True
+    assert config["security"] == {"python_version": "3.11"}
     assert config["general"]["action_test"]["pytest_args"] == "-q -x"
-    assert config["general"]["action_test"]["python_versions"] == [
-        "3.10",
-        "3.11",
-        "3.12",
-    ]
-    assert config["marketplace"]["target_branch"] == "stable"
-    assert config["marketplace"]["include_dependabot_config"] is True
+    assert config["marketplace"] == {"target_branch": "stable"}
+
+
+def test_top_level_organization_section_is_retained(repo):
+    repo_path = repo.write(
+        "bos-universal-config.json",
+        json.dumps(
+            {
+                "managed_file_sync": {"services": ["common"]},
+                "organization": {
+                    "reporting": {
+                        "title_prefix": "Example Org",
+                        "enable_job_summary": False,
+                    }
+                },
+            }
+        ),
+    )
+
+    config = load_repo_config(repo_path, use_marketplace=False)
+
+    assert config["organization"] == {
+        "reporting": {
+            "title_prefix": "Example Org",
+            "enable_job_summary": False,
+        }
+    }
 
 
 def test_marketplace_config_can_be_disabled():

@@ -50,7 +50,8 @@ is touched.
 - **Job summary** — successful runs write package identity, a drift narrative,
   resolved configuration, service-level counts, and file-by-file results.
   Failed runs still write a formal report with the exact error, stable rule ID,
-  deterministic remediation, confidence, source, and optional AI guidance.
+  deterministic remediation, confidence, source, and optional AI guidance. Both
+  paths use the automation hub's canonical report headings and severity labels.
 - **Independent package metadata** — package identity remains available even
   when repository policy is absent, overridden, or not loaded, and reserved
   identity keys are stripped from every config tier.
@@ -85,6 +86,7 @@ is touched.
   - [Examples](#examples)
 - [📝 Config schema reference](#-config-schema-reference)
   - [Top-level keys](#top-level-keys)
+  - [Organization reporting](#organization-reporting)
   - [AI settings](#ai-settings)
   - [Template variables](#template-variables)
   - [Environment variables](#environment-variables)
@@ -277,11 +279,13 @@ The SHA for any tag is `git rev-list -n 1 v1.0.0` against this repo, or the
 
 ## 📊 Job summary
 
-Every GitHub Actions run writes a job summary containing package identity, the
-drift narrative (AI-assisted or local), the resolved configuration and config
-cascade, action and service breakdowns, and a file-by-file result table.
-Reserved package-metadata keys found in config are reported as ignored. Rows
-with no entries are omitted to keep the summary compact.
+When GitHub Actions provides `GITHUB_STEP_SUMMARY` and
+`organization.reporting.enable_job_summary` is enabled, the action writes a job
+summary containing package identity, the drift narrative (AI-assisted or local),
+the resolved configuration and config cascade, action and service breakdowns,
+and a file-by-file result table. Reserved package-metadata keys found in config
+are reported as ignored. Rows with no entries are omitted to keep the summary
+compact.
 
 Configuration, marker, path-safety, and filesystem failures also write a
 best-effort report even when configuration resolution stopped before a normal
@@ -290,6 +294,22 @@ configuration context, a stable `MFS-*` rule, exact evidence and location,
 deterministic remediation with source/confidence, optional AI-assisted
 remediation with provider/confidence, and the report methodology. Failure-report
 I/O or AI availability never masks the original annotation or exit code.
+
+Success and failure reports use the same top-level layout as the automation
+hub: **Executive summary**, **Configuration used**, **Recommended Actions**, and
+**Detailed Findings**.
+
+| Machine severity | Report label | Meaning |
+| --- | --- | --- |
+| `pass` | Pass | The control was evaluated and satisfied. |
+| `warn` | Warning | Advisory drift was found and review is recommended. |
+| `fail` | High | A required control failed and must be corrected. |
+| `skip` | Not Assessed | The control was not evaluated; compliance cannot be inferred. |
+
+The reusable `bos-automation-hub` workflow owns standalone HTML/PDF rendering
+and authenticated artifact upload through its shared `job-report` action. This
+composite action emits the raw drift outputs and its direct-invocation Markdown
+summary; it does not upload artifacts or generate a duplicate rich report.
 
 | State | Meaning |
 | --- | --- |
@@ -556,17 +576,33 @@ or a destination-local `content_file`; names alone are rejected.
 ## 📝 Config schema reference
 
 Per-repo sync policy lives in the `managed_file_sync` section of a JSON config
-file. A document without that key is treated as the section itself. For a full
-universal config, the action also merges the top-level `security`, `marketplace`,
-and `general` companion sections so the report can show the complete effective
-policy. Every field is optional and unknown keys are ignored, so newer versions
-can extend the schema without breaking older callers.
+file. Universal configs may use `sync` as a grouped alias. If both keys are
+present, the explicit `managed_file_sync` section wins. A document without
+either key is treated as the sync section itself. When an external policy owner
+such as the automation hub supplies a full universal config, the action also
+retains top-level `organization`, `security`, `marketplace`, and `general`
+companion sections for reporting. Those sections are not bundled defaults.
+Every field is optional and unknown keys are ignored, so newer versions can
+extend the schema without breaking older callers.
 
 ```json
 {
   "managed_file_sync": {
     "services": ["common", "lf_line_endings", "editorconfig"],
     "variables": { "owner": "Example Org" }
+  }
+}
+```
+
+The equivalent grouped universal-config form is:
+
+```json
+{
+  "sync": {
+    "services": ["common", "lf_line_endings", "editorconfig"]
+  },
+  "organization": {
+    "reporting": { "title_prefix": "Example Org" }
   }
 }
 ```
@@ -598,41 +634,49 @@ Services can also be toggled with an object, which suits generated configs:
 | `marker_namespace` | string | `managed-file-sync` | Marker namespace for managed blocks. |
 | `managed_note` | string or array | see below | Provenance note written into managed blocks and file headers. |
 | `take_over_managed_files` | boolean | `false` | When `true`, removes competing managed blocks for the same service; when `false`, the run fails instead. |
-| `recommended_toolchain` | object | bundled advisory | Declares the package's recommended Python range/default/test matrix plus build, runtime, and development dependencies. It does not install or enforce packages in consumer repos. |
 | `ai` | object | see below | AI-assisted drift summary policy. |
 
-### Recommended toolchain
+### Organization reporting
 
-The bundled Marketplace tier records the project toolchain as advisory config:
+Reporting policy lives at top-level `organization.reporting`, outside the sync
+section. The direct action consumes the Markdown title, job-summary, and
+annotation controls. The reusable automation-hub workflow consumes the same
+policy when it renders and uploads the standalone audit report.
+
+| Key | Default | Owner and behavior |
+| --- | --- | --- |
+| `enable_job_summary` | `true` | Direct action and hub: write `$GITHUB_STEP_SUMMARY`; `false` suppresses it. |
+| `enable_annotations` | `true` | Direct action and hub: emit GitHub `error`/`warning` workflow annotations; plain stderr remains visible when disabled. |
+| `enable_html` | `true` | Hub: generate the standalone HTML audit report. |
+| `enable_pdf` | `false` | Hub: attempt PDF export when Chrome or Chromium is available. |
+| `html_path` | `blackout-secure-report.html` | Hub: workspace path for HTML output. |
+| `pdf_path` | `blackout-secure-report.pdf` | Hub: workspace path for optional PDF output. |
+| `artifact_name` | `blackout-secure-audit-report` | Hub workflow: authenticated Actions artifact name. |
+| `title_prefix` | `Blackout Secure` | Direct action and hub: prefix generated report titles. |
+| `fail_on` | `fail` | Hub report step: `fail`, `warn`, or `never`. Direct action exits remain controlled by sync errors and `fail_on_drift`. |
 
 ```json
 {
-  "recommended_toolchain": {
-    "advisory": true,
-    "python": {
-      "requires": ">=3.10",
-      "default_version": "3.12",
-      "tested_versions": ["3.10", "3.11", "3.12"]
-    },
-    "dependencies": {
-      "build": ["hatchling>=1.27"],
-      "runtime": [],
-      "development": ["pytest>=8.0", "ruff>=0.6", "PyYAML>=6.0"]
+  "organization": {
+    "reporting": {
+      "enable_job_summary": true,
+      "enable_annotations": true,
+      "enable_html": true,
+      "enable_pdf": false,
+      "html_path": "blackout-secure-report.html",
+      "pdf_path": "blackout-secure-report.pdf",
+      "artifact_name": "blackout-secure-audit-report",
+      "title_prefix": "Blackout Secure",
+      "fail_on": "fail"
     }
   }
 }
 ```
 
-These values mirror `pyproject.toml` and the action's Python input default, and
-repository contracts fail if they drift. The same bundle carries recommended
-`security`, `marketplace`, and `general.action_test` defaults. A repository's
-top-level companion sections override them in this action's config cascade.
-
-External hub workflows that parse `.github/bos-universal-config.json` directly
-do not load this package resource. Keep any top-level security gates, publication
-paths, metadata, and action-test matrix required by those workflows in the
-universal config; they are separate consumer overrides, not redundant sync
-settings.
+The published action intentionally does not bundle organization security gates,
+Marketplace publication metadata, action-test matrices, or repository-owned
+universal config. The automation hub supplies those companion sections through
+its global or inline config when it invokes this action.
 
 ### AI settings
 

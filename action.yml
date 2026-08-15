@@ -132,7 +132,7 @@ runs:
           true) args+=(--use-global-config) ;;
           false) args+=(--no-global-config) ;;
           *)
-            echo "::error::use_global_config must be 'auto', 'true', or 'false'" >&2
+            echo "use_global_config must be 'auto', 'true', or 'false'" >&2
             exit 2
             ;;
         esac

@@ -25,6 +25,7 @@ from .config import (
     MARKETPLACE_CONFIG_FILE,
     ai_settings,
     find_config,
+    load_companion_config,
     load_repo_config,
     managed_note,
     marker_namespace,
@@ -38,11 +39,15 @@ from .errors import ConfigError, SyncKitError
 from .metadata import package_metadata
 from .paths import resolve_repo_root
 from .reporting import (
+    REPORT_LABELS,
+    REPORT_MEANINGS,
     AssistedRemediation,
     FailureContext,
+    ReportingSettings,
     append_failure_summary,
     assess_error,
     render_failure_summary,
+    reporting_settings,
 )
 
 EXIT_OK = 0
@@ -151,6 +156,7 @@ class _Plan:
         )
         self.source_paths = self._source_paths(args)
         self.config_source = self._config_source()
+        self.reporting = reporting_settings(self.section)
         self.direction = sync_direction(self.section)
         self.ai = ai_settings(self.section)
         self.catalog = load_catalog(
@@ -255,25 +261,56 @@ def _failure_context(args: argparse.Namespace, plan: _Plan | None) -> FailureCon
     )
 
 
+def _failure_reporting_settings(
+    args: argparse.Namespace,
+    plan: _Plan | None,
+) -> ReportingSettings:
+    """Resolve report policy even when the main plan did not finish."""
+    if plan is not None:
+        return plan.reporting
+    try:
+        root = resolve_repo_root(args.root)
+        config_file = find_config(root, args.config)
+        global_candidate = root / args.global_config
+        if args.use_global_config is True:
+            global_config_file = find_config(root, args.global_config)
+        elif args.use_global_config is False:
+            global_config_file = None
+        else:
+            global_config_file = global_candidate if global_candidate.is_file() else None
+        organization = load_companion_config(
+            "organization",
+            config_file=config_file,
+            global_config_file=global_config_file,
+            global_config_json=args.global_config_json,
+            config_json=args.config_json,
+        )
+        return reporting_settings({"organization": organization})
+    except SyncKitError:
+        return ReportingSettings()
+
+
 def _write_failure_report(
     args: argparse.Namespace,
     error: SyncKitError,
     plan: _Plan | None,
+    report_settings: ReportingSettings | None = None,
 ) -> None:
     """Write a best-effort deterministic report, optionally enriched by AI."""
     summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
-    if not summary_file:
+    report_settings = report_settings or _failure_reporting_settings(args, plan)
+    if not summary_file or not report_settings.enable_job_summary:
         return
     try:
         finding = assess_error(error)
-        settings, policy_error = _failure_ai_settings(args, plan)
+        ai_config, policy_error = _failure_ai_settings(args, plan)
         assisted = None
-        if settings is None:
+        if ai_config is None:
             ai_status = f"not attempted; deterministic fallback ({policy_error})"
-        elif not settings.enable_ai_error_remediation:
+        elif not ai_config.enable_ai_error_remediation:
             ai_status = "disabled by policy"
         else:
-            provider = detect_provider(settings.ai_error_remediation_provider)
+            provider = detect_provider(ai_config.ai_error_remediation_provider)
             if provider is None:
                 ai_status = "unavailable; deterministic fallback (no eligible provider or credential)"
             else:
@@ -293,6 +330,7 @@ def _write_failure_report(
             _failure_context(args, plan),
             ai_status=ai_status,
             assisted=assisted,
+            settings=report_settings,
         )
         append_failure_summary(summary_file, report)
     except Exception:
@@ -359,10 +397,15 @@ def _drift_summary(plan: _Plan, result: SyncResult) -> tuple[str, str]:
     return text, provider.name
 
 
-def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
+def _write_github_summary(
+    plan: _Plan,
+    result: SyncResult,
+    *,
+    fail_on_drift: bool,
+) -> None:
     """Write an at-a-glance run report when GitHub Actions provides a summary file."""
     summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
-    if not summary_file:
+    if not summary_file or not plan.reporting.enable_job_summary:
         return
 
     pending = [item for item in result.file_results if result.dry_run and item.action]
@@ -411,6 +454,8 @@ def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
         if pending
         else "filtered"
         if not result.file_results and (excluded or disabled)
+        else "not assessed"
+        if not result.file_results
         else "complete"
     )
     marketplace = plan.section.get("marketplace") or {}
@@ -504,9 +549,34 @@ def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
         "Applied": len(applied),
     }
     visible_statuses = [label for label in status_counts if status_counts[label]]
+    if not visible_statuses:
+        status_counts["Not Assessed"] = 1
+        visible_statuses = ["Not Assessed"]
+
+    report_status = (
+        "skip"
+        if not result.file_results
+        else "fail"
+        if result.changed and fail_on_drift
+        else "warn"
+        if pending
+        else "pass"
+    )
+    drift_text, drift_source = _drift_summary(plan, result)
 
     lines = [
-        f"## Managed file sync: {verdict}",
+        f"# {escaped(plan.reporting.title_prefix)} Managed File Sync Report",
+        "",
+        "**Provided by [Blackout Secure](https://blackoutsecure.app)**",
+        "",
+        "## Executive summary",
+        "",
+        f"### Managed file sync: {verdict}",
+        "",
+        "| Status | Report label | Count | Meaning |",
+        "| --- | --- | ---: | --- |",
+        f"| {report_status} | {REPORT_LABELS[report_status]} | 1 | "
+        f"{REPORT_MEANINGS[report_status]} |",
         "",
         "### Package",
         "",
@@ -534,24 +604,10 @@ def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
         "",
         "### Sync status",
         "",
-        f"{'No active managed files were evaluated; configured services were excluded or disabled.' if not result.file_results and (excluded or disabled) else 'All managed files are in sync.' if not result.changed else f'Drift detected: {len(result.changed_files)} file(s) would change.' if result.dry_run else f'Applied {len(result.changed_files)} file(s) and updated the repo.'}",
-        "",
-        "### Resolved configuration",
-        "",
-        "<pre>",
-        f"config: {escaped(plan.config_file or '(none — using inputs and defaults)')}",
-        f"root: {escaped(plan.root)}",
-        f"direction: {escaped(plan.direction)}",
-        f"namespace: {escaped(plan.namespace)}",
-        f"take_over_managed_files: {'true' if plan.take_over_managed_files else 'false'}",
-        f"services: {escaped(', '.join(service.name for service in plan.services) if plan.services else '(none)')}",
-        f"mode: {'dry-run' if result.dry_run else 'apply'}",
-        f"config cascade: {escaped(serialize(list(plan.source_paths)))}",
-        "</pre>",
+        f"{'No active managed files were evaluated; configured services were excluded or disabled.' if not result.file_results and (excluded or disabled) else 'No active managed files were evaluated; compliance was not assessed.' if not result.file_results else 'All managed files are in sync.' if not result.changed else f'Drift detected: {len(result.changed_files)} file(s) would change.' if result.dry_run else f'Applied {len(result.changed_files)} file(s) and updated the repo.'}",
         "",
     ]
 
-    drift_text, drift_source = _drift_summary(plan, result)
     if drift_text:
         deterministic_drift = drift_source.startswith("local")
         drift_confidence = (
@@ -574,6 +630,24 @@ def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
             ]
         )
 
+    lines.extend([
+        "## Configuration used",
+        "",
+        "### Resolved configuration",
+        "",
+        "<pre>",
+        f"config: {escaped(plan.config_file or '(none — using inputs and defaults)')}",
+        f"root: {escaped(plan.root)}",
+        f"direction: {escaped(plan.direction)}",
+        f"namespace: {escaped(plan.namespace)}",
+        f"take_over_managed_files: {'true' if plan.take_over_managed_files else 'false'}",
+        f"services: {escaped(', '.join(service.name for service in plan.services) if plan.services else '(none)')}",
+        f"mode: {'dry-run' if result.dry_run else 'apply'}",
+        f"config cascade: {escaped(serialize(list(plan.source_paths)))}",
+        "</pre>",
+        "",
+    ])
+
     if plan.ignored_metadata_keys:
         lines.extend(
             [
@@ -584,18 +658,6 @@ def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
                 "",
             ]
         )
-
-    if visible_actions:
-        lines.extend(
-            [
-                "### Action breakdown",
-                "",
-                "| Action | Count |",
-                "| --- | ---: |",
-            ]
-        )
-        for label in visible_actions:
-            lines.append(f"| {label} | {action_counts.get(label, 0)} |")
 
     lines.extend(
         [
@@ -659,11 +721,33 @@ def _write_github_summary(plan: _Plan, result: SyncResult) -> None:
 
     lines.extend([
         "",
+        "## Recommended Actions",
+        "",
         "### Review recommendations",
         "",
     ])
     for recommendation in recommendations:
         lines.append(f"- {escaped(recommendation)}")
+
+    lines.extend(
+        [
+            "",
+            "## Detailed Findings",
+            "",
+        ]
+    )
+
+    if visible_actions:
+        lines.extend(
+            [
+                "### Action breakdown",
+                "",
+                "| Action | Count |",
+                "| --- | ---: |",
+            ]
+        )
+        for label in visible_actions:
+            lines.append(f"| {label} | {action_counts.get(label, 0)} |")
 
     lines.extend(
         [
@@ -739,7 +823,7 @@ def _run_sync(plan: _Plan, dry_run: bool, fail_on_drift: bool, show_diff: bool =
         print("\nNo services enabled — nothing to do.")
         result = SyncResult(dry_run=dry_run)
         _write_github_output(result)
-        _write_github_summary(plan, result)
+        _write_github_summary(plan, result, fail_on_drift=fail_on_drift)
         return EXIT_OK
 
     engine = SyncEngine(
@@ -765,12 +849,39 @@ def _run_sync(plan: _Plan, dry_run: bool, fail_on_drift: bool, show_diff: bool =
         print("\nAll managed files are in sync.")
 
     _write_github_output(result)
-    _write_github_summary(plan, result)
+    _write_github_summary(plan, result, fail_on_drift=fail_on_drift)
 
     if fail_on_drift and result.changed:
-        print("::error::managed-file-sync detected drift in managed files.", file=sys.stderr)
+        _emit_error(
+            "managed-file-sync detected drift in managed files.",
+            annotations=plan.reporting.enable_annotations,
+        )
         return EXIT_DRIFT
+    if dry_run and result.changed:
+        _emit_warning(
+            "managed-file-sync detected advisory drift.",
+            annotations=plan.reporting.enable_annotations,
+        )
     return EXIT_OK
+
+
+def _emit_diagnostic(message: str, *, level: str, annotations: bool) -> None:
+    """Write an escaped GitHub annotation or a plain stderr message."""
+    if annotations:
+        annotation = (
+            message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        )
+        print(f"::{level}::{annotation}", file=sys.stderr)
+        return
+    print(message, file=sys.stderr)
+
+
+def _emit_error(message: str, *, annotations: bool) -> None:
+    _emit_diagnostic(message, level="error", annotations=annotations)
+
+
+def _emit_warning(message: str, *, annotations: bool) -> None:
+    _emit_diagnostic(message, level="warning", annotations=annotations)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -831,12 +942,20 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     except ConfigError as exc:
-        print(f"::error::managed-file-sync config error: {exc}", file=sys.stderr)
-        _write_failure_report(args, exc, plan)
+        report_settings = _failure_reporting_settings(args, plan)
+        _emit_error(
+            f"managed-file-sync config error: {exc}",
+            annotations=report_settings.enable_annotations,
+        )
+        _write_failure_report(args, exc, plan, report_settings)
         return EXIT_CONFIG
     except SyncKitError as exc:
-        print(f"::error::managed-file-sync error: {exc}", file=sys.stderr)
-        _write_failure_report(args, exc, plan)
+        report_settings = _failure_reporting_settings(args, plan)
+        _emit_error(
+            f"managed-file-sync error: {exc}",
+            annotations=report_settings.enable_annotations,
+        )
+        _write_failure_report(args, exc, plan, report_settings)
         return EXIT_CONFIG
 
 

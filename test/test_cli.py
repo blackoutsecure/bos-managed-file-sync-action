@@ -20,6 +20,17 @@ def test_check_exits_non_zero_on_drift(repo):
     assert main(["check", "--root", str(repo.root)]) == EXIT_DRIFT
 
 
+def test_check_summary_reports_required_drift_as_high(repo, monkeypatch):
+    summary_file = repo.root / "gh_summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_file))
+    repo.write_config({"services": ["common"]})
+
+    assert main(["check", "--root", str(repo.root)]) == EXIT_DRIFT
+
+    summary = summary_file.read_text(encoding="utf-8")
+    assert "| fail | High | 1 | Required control failed and must be corrected. |" in summary
+
+
 def test_apply_fail_on_drift_flag(repo):
     repo.write_config({"services": ["common"]})
     assert main(["apply", "--root", str(repo.root), "--dry-run", "--fail-on-drift"]) == EXIT_DRIFT
@@ -179,6 +190,34 @@ def test_invalid_config_returns_config_exit_code(repo):
     assert main(["apply", "--root", str(repo.root)]) == EXIT_CONFIG
 
 
+def test_invalid_reporting_policy_writes_domain_specific_failure_summary(
+    repo,
+    monkeypatch,
+):
+    summary_file = repo.root / "gh_summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_file))
+    repo.write(
+        ".github/bos-universal-config.json",
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "use_marketplace_config": False,
+                    "services": [],
+                },
+                "organization": {"reporting": {"fail_on": "sometimes"}},
+            }
+        ),
+    )
+
+    assert main(["apply", "--root", str(repo.root)]) == EXIT_CONFIG
+
+    summary = summary_file.read_text(encoding="utf-8")
+    assert "`MFS-CFG-007`" in summary
+    assert "Invalid organization reporting policy" in summary
+    assert "organization.reporting.fail_on" in summary
+    assert "Correct the reported field under `organization.reporting`" in summary
+
+
 def test_missing_service_definition_writes_detailed_error_summary(repo, capsys, monkeypatch):
     summary_file = repo.root / "gh_summary.md"
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_file))
@@ -198,17 +237,187 @@ def test_missing_service_definition_writes_detailed_error_summary(repo, capsys, 
     assert "managed_file_sync.service_definitions.nope" in error
     assert "# Blackout Secure Managed File Sync Report" in summary
     assert "## Executive summary" in summary
-    assert "**Verdict:** Critical configuration error" in summary
+    assert "**Verdict:** High configuration error" in summary
     assert "## Configuration used" in summary
-    assert "## Errors requiring attention" in summary
-    assert "| `MFS-CFG-004` | Critical |" in summary
+    assert "## Recommended Actions" in summary
+    assert "## Detailed Findings" in summary
+    assert "| `MFS-CFG-004` | fail | High |" in summary
     assert "managed_file_sync.service_definitions.nope" in summary
-    assert "## Recommendations" in summary
     assert "Blackout Secure Recommended Remediation" in summary
     assert "High (deterministic)" in summary
     assert "AI-assisted remediation" in summary
     assert "disabled by policy" in summary
-    assert "## Scope and methodology" in summary
+    assert "### Scope and methodology" in summary
+
+
+def test_config_error_annotations_can_be_disabled(repo, capsys):
+    repo.write(
+        ".github/bos-universal-config.json",
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "use_marketplace_config": False,
+                    "services": ["nope"],
+                },
+                "organization": {"reporting": {"enable_annotations": False}},
+            }
+        ),
+    )
+
+    assert main(["apply", "--root", str(repo.root)]) == EXIT_CONFIG
+
+    error = capsys.readouterr().err
+    assert error.startswith("managed-file-sync config error: ")
+    assert "::error::" not in error
+    assert "managed_file_sync.service_definitions.nope" in error
+
+
+def test_early_config_error_honors_reporting_title_and_annotation_policy(
+    repo,
+    capsys,
+    monkeypatch,
+):
+    summary_file = repo.root / "gh_summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_file))
+    repo.write(
+        ".github/bos-universal-config.json",
+        json.dumps(
+            {
+                "managed_file_sync": False,
+                "organization": {
+                    "reporting": {
+                        "enable_annotations": False,
+                        "title_prefix": "Example Org",
+                    }
+                },
+            }
+        ),
+    )
+
+    assert main(["apply", "--root", str(repo.root)]) == EXIT_CONFIG
+
+    error = capsys.readouterr().err
+    assert error.startswith("managed-file-sync config error: ")
+    assert "::error::" not in error
+    assert summary_file.read_text(encoding="utf-8").startswith(
+        "# Example Org Managed File Sync Report"
+    )
+
+
+def test_early_config_error_honors_disabled_job_summary(repo, monkeypatch):
+    summary_file = repo.root / "gh_summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_file))
+    repo.write(
+        ".github/bos-universal-config.json",
+        json.dumps(
+            {
+                "managed_file_sync": [],
+                "organization": {"reporting": {"enable_job_summary": False}},
+            }
+        ),
+    )
+
+    assert main(["apply", "--root", str(repo.root)]) == EXIT_CONFIG
+    assert not summary_file.exists()
+
+
+def test_drift_annotations_can_be_disabled(repo, capsys):
+    repo.write(
+        ".github/bos-universal-config.json",
+        json.dumps(
+            {
+                "managed_file_sync": {"services": ["common"]},
+                "organization": {"reporting": {"enable_annotations": False}},
+            }
+        ),
+    )
+
+    assert main(["check", "--root", str(repo.root)]) == EXIT_DRIFT
+
+    error = capsys.readouterr().err
+    assert error.strip() == "managed-file-sync detected drift in managed files."
+    assert "::error::" not in error
+
+
+def test_advisory_drift_emits_warning_annotation(repo, capsys):
+    repo.write_config({"services": ["common"]})
+
+    assert main(["apply", "--root", str(repo.root), "--dry-run"]) == EXIT_OK
+
+    error = capsys.readouterr().err
+    assert error.strip() == "::warning::managed-file-sync detected advisory drift."
+
+
+def test_advisory_drift_annotation_can_be_disabled(repo, capsys):
+    repo.write(
+        ".github/bos-universal-config.json",
+        json.dumps(
+            {
+                "managed_file_sync": {"services": ["common"]},
+                "organization": {"reporting": {"enable_annotations": False}},
+            }
+        ),
+    )
+
+    assert main(["apply", "--root", str(repo.root), "--dry-run"]) == EXIT_OK
+
+    error = capsys.readouterr().err
+    assert error.strip() == "managed-file-sync detected advisory drift."
+    assert "::warning::" not in error
+
+
+def test_failure_summary_honors_organization_reporting_policy(repo, monkeypatch):
+    summary_file = repo.root / "gh_summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_file))
+    repo.write(
+        ".github/bos-universal-config.json",
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "use_marketplace_config": False,
+                    "services": ["nope"],
+                    "ai": {"enable_ai_error_remediation": False},
+                },
+                "organization": {
+                    "reporting": {
+                        "title_prefix": "Example Org",
+                        "enable_html": False,
+                    }
+                },
+            }
+        ),
+    )
+
+    assert main(["apply", "--root", str(repo.root)]) == EXIT_CONFIG
+
+    assert summary_file.read_text(encoding="utf-8").startswith(
+        "# Example Org Managed File Sync Report"
+    )
+
+
+def test_failure_summary_can_be_disabled_by_organization_policy(repo, monkeypatch):
+    summary_file = repo.root / "gh_summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_file))
+    repo.write(
+        ".github/bos-universal-config.json",
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "use_marketplace_config": False,
+                    "services": ["nope"],
+                },
+                "organization": {
+                    "reporting": {
+                        "enable_job_summary": False,
+                        "enable_html": False,
+                    }
+                },
+            }
+        ),
+    )
+
+    assert main(["apply", "--root", str(repo.root)]) == EXIT_CONFIG
+    assert not summary_file.exists()
 
 
 def test_failure_summary_adds_ai_remediation_when_provider_is_available(
@@ -445,7 +654,12 @@ def test_github_summary_reports_file_and_service_results(repo, monkeypatch):
     assert main(["apply", "--root", str(repo.root), "--dry-run"]) == EXIT_OK
 
     summary = summary_file.read_text(encoding="utf-8")
-    assert "## Managed file sync: changes pending" in summary
+    assert "## Executive summary" in summary
+    assert "## Configuration used" in summary
+    assert "## Recommended Actions" in summary
+    assert "## Detailed Findings" in summary
+    assert "| warn | Warning | 1 | Advisory drift; review recommended. |" in summary
+    assert "### Managed file sync: changes pending" in summary
     assert "| 1 | 1 | 2 | 1 |" in summary
     assert "| Action | Count |" in summary
     assert "| Already compliant | 1 |" in summary
@@ -458,6 +672,59 @@ def test_github_summary_reports_file_and_service_results(repo, monkeypatch):
     assert "| Pending | <code>drifted.txt</code> | <code>drifted</code> | Created |" in summary
     assert "### Review recommendations" in summary
     assert "### Full config review" in summary
+
+
+def test_github_summary_honors_organization_reporting_policy(repo, monkeypatch):
+    summary_file = repo.root / "gh_summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_file))
+    repo.write(
+        ".github/bos-universal-config.json",
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "use_marketplace_config": False,
+                    "services": [],
+                },
+                "organization": {
+                    "reporting": {
+                        "title_prefix": "Example Org",
+                        "enable_html": False,
+                    }
+                },
+            }
+        ),
+    )
+
+    assert main(["apply", "--root", str(repo.root), "--dry-run"]) == EXIT_OK
+
+    assert summary_file.read_text(encoding="utf-8").startswith(
+        "# Example Org Managed File Sync Report"
+    )
+
+
+def test_github_summary_can_be_disabled_by_organization_policy(repo, monkeypatch):
+    summary_file = repo.root / "gh_summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_file))
+    repo.write(
+        ".github/bos-universal-config.json",
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "use_marketplace_config": False,
+                    "services": [],
+                },
+                "organization": {
+                    "reporting": {
+                        "enable_job_summary": False,
+                        "enable_html": False,
+                    }
+                },
+            }
+        ),
+    )
+
+    assert main(["apply", "--root", str(repo.root)]) == EXIT_OK
+    assert not summary_file.exists()
 
 
 def test_github_summary_omits_absent_states(repo, monkeypatch):
@@ -498,7 +765,7 @@ def test_github_summary_distinguishes_disabled_services_from_compliance(repo, mo
     assert main(["apply", "--root", str(repo.root)]) == EXIT_OK
 
     summary = summary_file.read_text(encoding="utf-8")
-    assert "## Managed file sync: filtered" in summary
+    assert "### Managed file sync: filtered" in summary
     assert "No active managed files were evaluated; configured services were excluded or disabled." in summary
     assert "### Service selection" in summary
     assert "| Requested | <code>common</code> |" in summary
@@ -540,11 +807,6 @@ def test_github_summary_includes_config_details(repo, monkeypatch):
     assert "### Full config review" in summary
     assert "<code>marketplace.allowlist_paths</code> | <code>action.yml, src</code> |" in summary
     assert "<code>security.enable_python_lint</code> | <code>True</code> |" in summary
-    assert "<code>recommended_toolchain.python.default_version</code> | <code>3.12</code> |" in summary
-    assert "<code>recommended_toolchain.dependencies.runtime</code> | <code>(none)</code> |" in summary
-    assert "<code>general.action_test.python_versions</code> | <code>3.10, 3.11, 3.12</code> |" in summary
-    assert "Recommended Python is 3.12 (&gt;=3.10); tested versions: 3.10, 3.11, 3.12." in summary
-    assert "Recommended dependency policy: runtime (none); development pytest&gt;=8.0, ruff&gt;=0.6, PyYAML&gt;=6.0." in summary
     assert "<code>take_over_managed_files</code> | <code>False</code> |" in summary
     assert "### Block policy" in summary
     assert "| <code>common</code> | <code>.gitignore</code> | <code>block</code> |" in summary

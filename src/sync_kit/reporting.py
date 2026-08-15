@@ -6,10 +6,108 @@ import html
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from .errors import ConfigError, MarkerError
+from .paths import normalize_relative_path
 
 _SCHEMA_PATH = re.compile(r"managed_file_sync\.service_definitions\.[A-Za-z0-9_.-]+")
+_ARTIFACT_NAME_FORBIDDEN = frozenset('\\/:*?"<>|\r\n')
+REPORT_LABELS = {
+    "pass": "Pass",
+    "warn": "Warning",
+    "fail": "High",
+    "skip": "Not Assessed",
+}
+REPORT_MEANINGS = {
+    "pass": "Control satisfied.",
+    "warn": "Advisory drift; review recommended.",
+    "fail": "Required control failed and must be corrected.",
+    "skip": "Not evaluated on this run; coverage cannot be inferred.",
+}
+
+
+@dataclass(frozen=True)
+class ReportingSettings:
+    """Normalized organization-wide report policy."""
+
+    enable_job_summary: bool = True
+    enable_annotations: bool = True
+    enable_html: bool = True
+    enable_pdf: bool = False
+    html_path: str = "blackout-secure-report.html"
+    pdf_path: str = "blackout-secure-report.pdf"
+    artifact_name: str = "blackout-secure-audit-report"
+    title_prefix: str = "Blackout Secure"
+    fail_on: str = "fail"
+
+
+def reporting_settings(section: dict[str, Any]) -> ReportingSettings:
+    """Read ``organization.reporting`` using the automation hub defaults."""
+    organization = section.get("organization")
+    if organization is None:
+        organization = {}
+    if not isinstance(organization, dict):
+        raise ConfigError("'organization' must be a JSON object")
+    reporting = organization.get("reporting")
+    if reporting is None:
+        reporting = {}
+    if not isinstance(reporting, dict):
+        raise ConfigError("'organization.reporting' must be a JSON object")
+
+    fail_on = _reporting_text(reporting, "fail_on", "fail").lower()
+    if fail_on not in {"fail", "warn", "never"}:
+        raise ConfigError(
+            "'organization.reporting.fail_on' must be 'fail', 'warn', or 'never'"
+        )
+
+    html_path = normalize_relative_path(
+        _reporting_text(reporting, "html_path", "blackout-secure-report.html"),
+        key="organization.reporting.html_path",
+    )
+    pdf_path = normalize_relative_path(
+        _reporting_text(reporting, "pdf_path", "blackout-secure-report.pdf"),
+        key="organization.reporting.pdf_path",
+    )
+    artifact_name = _reporting_text(
+        reporting,
+        "artifact_name",
+        "blackout-secure-audit-report",
+    )
+    if any(character in _ARTIFACT_NAME_FORBIDDEN for character in artifact_name):
+        raise ConfigError(
+            "'organization.reporting.artifact_name' contains a character GitHub artifacts do not allow"
+        )
+
+    return ReportingSettings(
+        enable_job_summary=_reporting_bool(reporting, "enable_job_summary", True),
+        enable_annotations=_reporting_bool(reporting, "enable_annotations", True),
+        enable_html=_reporting_bool(reporting, "enable_html", True),
+        enable_pdf=_reporting_bool(reporting, "enable_pdf", False),
+        html_path=html_path,
+        pdf_path=pdf_path,
+        artifact_name=artifact_name,
+        title_prefix=_reporting_text(reporting, "title_prefix", "Blackout Secure"),
+        fail_on=fail_on,
+    )
+
+
+def _reporting_bool(reporting: dict[str, Any], key: str, default: bool) -> bool:
+    value = reporting.get(key)
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    raise ConfigError(f"'organization.reporting.{key}' must be true or false")
+
+
+def _reporting_text(reporting: dict[str, Any], key: str, default: str) -> str:
+    value = reporting.get(key)
+    if value is None:
+        return default
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigError(f"'organization.reporting.{key}' must be a non-empty string")
+    return value.strip()
 
 
 @dataclass(frozen=True)
@@ -125,6 +223,18 @@ def assess_error(error: Exception) -> ErrorFinding:
             "Assign the path to one service, or use distinct marker namespaces when multiple "
             "block-mode services intentionally share a file.",
         )
+    if "organization.reporting" in lower or lower.startswith(
+        "'organization' must be a json object"
+    ):
+        return _finding(
+            "MFS-CFG-007",
+            "Invalid organization reporting policy",
+            location,
+            message,
+            "Correct the reported field under `organization.reporting`, then run "
+            "`bos-sync validate` before retrying. Reporting paths must be safe, "
+            "repository-relative paths.",
+        )
     if "during sync; retry" in lower:
         return _finding(
             "MFS-FS-002",
@@ -192,32 +302,35 @@ def render_failure_summary(
     *,
     ai_status: str,
     assisted: AssistedRemediation | None = None,
+    settings: ReportingSettings | None = None,
 ) -> str:
     """Render a self-contained failure report in the standard audit layout."""
+    settings = settings or ReportingSettings()
     sources = ", ".join(context.config_sources) or "No config source resolved"
     verdict = (
-        "Critical configuration error"
+        "High configuration error"
         if finding.rule_id.startswith("MFS-CFG-")
-        else "Critical managed-file sync error"
+        else "High managed-file sync error"
     )
+    severity_label = REPORT_LABELS[finding.severity]
     lines = [
-        "# Blackout Secure Managed File Sync Report - failure",
+        f"# {_cell(settings.title_prefix)} Managed File Sync Report",
         "",
         "**Provided by [Blackout Secure](https://blackoutsecure.app)**",
         "",
-        "## Navigation",
-        "",
-        "- [Executive summary](#executive-summary)",
-        "- [Configuration used](#configuration-used)",
-        "- [Errors requiring attention](#errors-requiring-attention)",
-        "- [Recommendations](#recommendations)",
-        "- [Scope and methodology](#scope-and-methodology)",
+        "> This open-source report provides operational guidance and does not replace "
+        "professional security, compliance, or legal advice.",
         "",
         "## Executive summary",
         "",
-        "| Stage | Result | Details |",
-        "| --- | --- | --- |",
-        f"| {_cell(context.command)} | failure | {_cell(finding.category)} |",
+        "| Stage | Status | Report label | Details |",
+        "| --- | --- | --- | --- |",
+        f"| {_cell(context.command)} | {finding.severity} | {severity_label} | "
+        f"{_cell(finding.category)} |",
+        "",
+        "| Pass | Warning | High | Not Assessed | Total |",
+        "| ---: | ---: | ---: | ---: | ---: |",
+        "| 0 | 0 | 1 | 0 | 1 |",
         "",
         f"**Verdict:** {verdict}",
         "",
@@ -238,15 +351,7 @@ def render_failure_summary(
         f"| Package version | {_cell(context.package_version)} | Managed-file-sync version producing this report. |",
         f"| AI-assisted remediation | {_cell(ai_status)} | Advisory only; deterministic guidance remains authoritative. |",
         "",
-        "## Errors requiring attention",
-        "",
-        "| Rule | Severity | Category | Location | Evidence | Recommended remediation | Confidence | Source |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
-        f"| `{_cell(finding.rule_id)}` | {_cell(finding.severity)} | "
-        f"{_cell(finding.category)} | {_cell(finding.location)} | {_cell(finding.evidence)} | "
-        f"{_cell(finding.remediation)} | {_cell(finding.confidence)} | {_cell(finding.source)} |",
-        "",
-        "## Recommendations",
+        "## Recommended Actions",
         "",
         "### Blackout Secure Recommended Remediation",
         "",
@@ -274,7 +379,19 @@ def render_failure_summary(
     lines.extend(
         [
             "",
-            "## Scope and methodology",
+            "## Detailed Findings",
+            "",
+            "### Error requiring attention",
+            "",
+            "| Rule | Status | Severity | Category | Location | Evidence | Recommended remediation | Confidence | Source |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            f"| `{_cell(finding.rule_id)}` | {_cell(finding.severity)} | "
+            f"{_cell(severity_label)} | {_cell(finding.category)} | "
+            f"{_cell(finding.location)} | {_cell(finding.evidence)} | "
+            f"{_cell(finding.remediation)} | {_cell(finding.confidence)} | "
+            f"{_cell(finding.source)} |",
+            "",
+            "### Scope and methodology",
             "",
             "- The deterministic rule is selected from the exception type and error text emitted by "
             "the managed-file-sync parser, catalog, marker, path-safety, or filesystem boundary.",
@@ -283,6 +400,8 @@ def render_failure_summary(
             "- When AI is used, only error category, error text, location, and deterministic remediation "
             "are sent. Config contents, managed-file contents, diffs, and credentials are not sent.",
             "- Summary-write and AI-provider failures never replace the original action error.",
+            f"- Report provenance: `bos-managed-file-sync` {_cell(context.package_version)}; "
+            f"finding source: {_cell(finding.source)}.",
             "",
         ]
     )
@@ -311,7 +430,7 @@ def _finding(
     return ErrorFinding(
         rule_id=rule_id,
         category=category,
-        severity="Critical",
+        severity="fail",
         location=location,
         evidence=evidence,
         remediation=remediation,
@@ -324,6 +443,7 @@ def _error_location(message: str) -> str:
     if schema_paths:
         return ", ".join(schema_paths)
     for pattern in (
+        r"'(organization(?:\.reporting(?:\.[A-Za-z0-9_.-]+)?)?)'",
         r"content_file not found:\s*([^.;]+)",
         r"invalid JSON in\s+(.+?):\s+line\s+\d+",
         r"config file not found:\s*(.+)$",

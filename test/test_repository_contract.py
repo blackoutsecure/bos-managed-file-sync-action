@@ -93,14 +93,27 @@ def test_action_metadata_matches_package_metadata():
     assert _yaml_scalar(action, "icon", indent=2)
 
 
-def test_managed_file_config_uses_marketplace_defaults():
-    repo_path = GITHUB / "bos-universal-config.json"
-    section = load_repo_config(config_file=repo_path)
+def test_public_bundle_contains_only_action_owned_config():
+    bundle = _json(ROOT / "src/sync_kit/managed-file-sync-marketplace-config.json")
+
+    assert set(bundle) == {"managed_file_sync"}
+    assert (GITHUB / "bos-universal-config.json").is_file()
+    workflows = sorted((GITHUB / "workflows").glob("bos-universal-*-kicker.yml"))
+    assert len(workflows) == 4
+    for workflow in workflows:
+        document = workflow.read_text(encoding="utf-8")
+        assert "Customize via `.github/bos-universal-config.json`, not this file." in document
+        assert "Customize via `bos-universal-config.json`, not this file." not in document
+
+    marketplace_workflow = (
+        GITHUB / "workflows/bos-universal-marketplace-kicker.yml"
+    ).read_text(encoding="utf-8")
+    assert "config_path: .github/bos-universal-config.json" in marketplace_workflow
+
+    section = load_repo_config(config_file=None, global_config_file=None)
     registry = load_catalog(ROOT, section, section_is_merged=True)
-    section["services"] = [name for name in section["services"] if name in registry]
     resolved = resolve_services(registry, section)
 
-    assert section["use_marketplace_config"] is True
     assert [service.name for service in resolved] == [
         "common",
         "lf_line_endings",
@@ -111,79 +124,39 @@ def test_managed_file_config_uses_marketplace_defaults():
     ]
 
 
-def test_marketplace_profiles_are_opt_in():
-    config = load_repo_config(config_file=GITHUB / "bos-universal-config.json")
-    assert "quality_baseline" not in config["services"]
+def test_kickers_use_hub_shared_ref_resolver():
+    workflows = sorted((GITHUB / "workflows").glob("bos-universal-*-kicker.yml"))
 
+    for workflow in workflows:
+        document = workflow.read_text(encoding="utf-8")
+        assert (
+            "uses: blackoutsecure/bos-automation-hub/.github/actions/shared/resolve-hub-ref@main"
+            in document
+        )
+        assert "case \"${EVENT_NAME}\" in" not in document
 
-def test_repo_selects_required_opt_in_hub_kickers():
-    config = _json(GITHUB / "bos-universal-config.json")
-    assert config["managed_file_sync"]["services"] == [
-        "bos_universal_action_test_kicker",
-        "bos_universal_marketplace_kicker",
-    ]
-
-
-def test_repository_has_only_canonical_universal_config():
-    assert (GITHUB / "bos-universal-config.json").is_file()
-    assert not (ROOT / "bos-universal-config.json").exists()
-
-
-def test_universal_marketplace_publication_contract():
-    config = _json(GITHUB / "bos-universal-config.json")
-    marketplace = config["marketplace"]
-
-    assert "source_branch" not in marketplace
-    assert marketplace["target_branch"] == "main"
-    assert marketplace["include_dependabot_config"] is True
-    assert marketplace["include_github_metadata"] is False
-    assert {
-        ".github/dependabot.yml",
-        "action.yml",
-        "src",
-        "README.md",
-        "LICENSE",
-        "NOTICE",
-    } <= set(marketplace["required_paths"])
-    assert ".gitignore" not in marketplace["allowlist_paths"]
-    assert "test/**" not in marketplace["allowlist_paths"]
-    assert "pyproject.toml" not in marketplace["allowlist_paths"]
-    assert "scripts/" not in marketplace["allowlist_paths"]
-    assert {"pyproject.toml", "scripts/", "test/"} <= set(marketplace["blocked_paths"])
-    assert config["general"] == {
-        "action_test": {"python_versions": ["3.10", "3.11", "3.12"]}
-    }
-
-
-def test_marketplace_recommendations_match_project_toolchain():
-    config = load_repo_config(None)
-    toolchain = config["recommended_toolchain"]
-    python = toolchain["python"]
-    dependencies = toolchain["dependencies"]
-    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    action = (ROOT / "action.yml").read_text(encoding="utf-8")
-
-    assert toolchain["advisory"] is True
-    assert python["requires"] == _toml_value(pyproject, "project", "requires-python")
-    assert dependencies["build"] == _toml_value(pyproject, "build-system", "requires")
-    assert dependencies["runtime"] == _toml_value(pyproject, "project", "dependencies")
-    assert dependencies["development"] == _toml_value(
-        pyproject,
-        "project.optional-dependencies",
-        "dev",
+    security = (GITHUB / "workflows/bos-universal-security-kicker.yml").read_text(
+        encoding="utf-8"
     )
-    assert config["security"]["python_version"] == python["default_version"]
-    assert config["security"]["python_packages"] == dependencies["development"]
-    assert config["general"]["action_test"]["python_versions"] == python["tested_versions"]
-    assert config["general"]["action_test"]["python_packages"] == dependencies["development"]
+    assert "merge_group_base_ref: ${{ github.event.merge_group.base_ref }}" in security
 
-    python_input = re.search(
-        r"^  python_version:\s*$\n(?P<body>(?:    .*\n)+)",
-        action,
-        re.MULTILINE,
+
+def test_external_hub_policy_can_supply_companion_sections():
+    config = load_repo_config(
+        global_config_json=json.dumps(
+            {
+                "organization": {"reporting": {"title_prefix": "Example Org"}},
+                "security": {"enable_code_scan": True},
+                "marketplace": {"target_branch": "main"},
+                "general": {"action_test": {"python_versions": ["3.12"]}},
+            }
+        )
     )
-    assert python_input
-    assert _yaml_scalar(python_input.group("body"), "default", indent=4) == python["default_version"]
+
+    assert config["organization"]["reporting"]["title_prefix"] == "Example Org"
+    assert config["security"] == {"enable_code_scan": True}
+    assert config["marketplace"] == {"target_branch": "main"}
+    assert config["general"]["action_test"] == {"python_versions": ["3.12"]}
 
 
 def test_composite_action_runs_isolated_bundled_source_without_installing():
@@ -244,57 +217,11 @@ def test_action_auto_discovers_global_config_with_explicit_controls():
     assert "false) args+=(--no-global-config)" in action
 
 
-def test_marketplace_kicker_supports_metadata_sync():
-    workflow = (
-        GITHUB / "workflows/bos-universal-marketplace-kicker.yml"
-    ).read_text(encoding="utf-8")
+def test_composite_preflight_diagnostics_do_not_bypass_reporting_policy():
+    action = (ROOT / "action.yml").read_text(encoding="utf-8")
 
-    assert "options: [validate, name-check, release, metadata]" in workflow
-    assert "workflows/repo-metadata-sync.yml@main" in workflow
-    assert "needs.release.outputs.tag_name" in workflow
-    assert "secrets: inherit" in workflow
-
-    release_job = workflow.split("  release:", 1)[1].split("  metadata:", 1)[0]
-    assert "models: read" in release_job
-
-
-def test_security_kicker_routes_dev_and_main_with_required_permissions():
-    workflow = (
-        GITHUB / "workflows/bos-universal-security-kicker.yml"
-    ).read_text(encoding="utf-8")
-
-    assert "workflows/bos-universal-security.yml@dev" in workflow
-    assert "workflows/bos-universal-security.yml@main" in workflow
-    assert workflow.count("config_authoritative: true") == 2
-    assert workflow.count("security-events: write") == 2
-    assert workflow.count("secrets: inherit") == 2
-
-
-def test_action_test_kicker_routes_to_branch_specific_hub_workflows_read_only():
-    workflow = (
-        GITHUB / "workflows/bos-universal-action-test-kicker.yml"
-    ).read_text(encoding="utf-8")
-
-    assert workflow.count("workflows/bos-universal-action-test.yml@main") == 1
-    assert workflow.count("workflows/bos-universal-action-test.yml@dev") == 1
-    assert "name: Resolve target hub ref" in workflow
-    assert "contents: write" not in workflow
-    assert "secrets:" not in workflow
-
-
-def test_sync_kicker_routes_to_branch_specific_hub_workflows():
-    workflow = (
-        GITHUB / "workflows/bos-universal-sync-kicker.yml"
-    ).read_text(encoding="utf-8")
-
-    assert "- cron: '29 14 * * 1'" in workflow
-    assert "- '.github/bos-universal-config.json'" in workflow
-    assert "name: Resolve target hub ref" in workflow
-    assert "workflows/bos-universal-sync.yml@dev" in workflow
-    assert "workflows/bos-universal-sync.yml@main" in workflow
-    assert workflow.count("secrets: inherit") == 2
-    assert "global_config_json: >-" not in workflow
-    assert "actions/shared/commit-and-push@main" not in workflow
+    assert 'echo "use_global_config must be' in action
+    assert 'echo "::error::use_global_config must be' not in action
 
 
 def test_codeql_caller_avoids_duplicate_pull_request_scanner():
@@ -340,11 +267,6 @@ def test_package_legal_identity_matches_readme_and_notice():
     assert metadata.PACKAGE_COPYRIGHT in readme
     assert metadata.PACKAGE_COPYRIGHT.replace(" ©", "") in notice
     assert metadata.PACKAGE_WEBSITE in readme
-
-
-def test_repo_metadata_uses_official_website():
-    config = _json(GITHUB / "bos-universal-config.json")
-    assert config["marketplace"]["repo_metadata"]["homepage"] == metadata.PACKAGE_WEBSITE
 
 
 def test_marketplace_config_declares_no_package_metadata():
