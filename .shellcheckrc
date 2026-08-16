@@ -1,5 +1,4 @@
 # >>> managed-file-sync:shellcheck >>>
-# Managed by Blackout Secure Managed File Sync — configure services in .github/bos-universal-config.json.
 shell=bash
 disable=SC2016,SC1091
 external-sources=true
