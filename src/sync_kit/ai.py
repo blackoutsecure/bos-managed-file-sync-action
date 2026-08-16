@@ -88,9 +88,7 @@ def settings_from_section(section: dict[str, Any]) -> AISettings:
     return AISettings(
         enable_ai_drift_summary=drift_enabled,
         ai_drift_summary_provider=drift_provider,
-        enable_ai_error_remediation=(
-            drift_enabled and flag("enable_ai_error_remediation", True)
-        ),
+        enable_ai_error_remediation=(drift_enabled and flag("enable_ai_error_remediation", True)),
         ai_error_remediation_provider=error_provider,
         local_heuristic_fallback=flag("local_heuristic_fallback", True),
     )

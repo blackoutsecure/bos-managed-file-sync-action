@@ -20,6 +20,7 @@ from .markers import (
     apply_block,
     comment_lines,
     comment_prefix_for,
+    dedupe_lines_outside_block,
     find_marker_namespaces,
     remove_block,
     supports_comments,
@@ -105,6 +106,7 @@ class SyncEngine:
         namespace: str = DEFAULT_NAMESPACE,
         note: str | None = None,
         take_over_managed_files: bool = False,
+        cleanup_duplicate_lines: bool = False,
         config_source: str | None = None,
     ) -> None:
         self.root = resolve_repo_root(root)
@@ -112,6 +114,7 @@ class SyncEngine:
         self.namespace = namespace
         self.note = note
         self.take_over_managed_files = take_over_managed_files
+        self.cleanup_duplicate_lines = cleanup_duplicate_lines
         self.variables = builtin_variables(variables, config_source)
 
     def sync(self, services: Iterable[Service]) -> SyncResult:
@@ -143,7 +146,9 @@ class SyncEngine:
                 if change is not None:
                     result.changes.append(change)
                 result.file_results.append(
-                    FileResult(service=service.name, path=path, action=change.action if change else None)
+                    FileResult(
+                        service=service.name, path=path, action=change.action if change else None
+                    )
                 )
 
         encoded: dict[str, bytes] = {}
@@ -169,11 +174,7 @@ class SyncEngine:
                             self.root,
                             state.target,
                             encoded[path],
-                            mode=(
-                                state.mode
-                                if state.mode is not None
-                                else 0o666
-                            ),
+                            mode=(state.mode if state.mode is not None else 0o666),
                             create=state.original is None,
                         )
                     else:
@@ -228,12 +229,15 @@ class SyncEngine:
         if state.target.is_symlink():
             raise ConfigError(f"managed path became a symbolic link during sync: {path}")
         if state.original is None:
-            if _read_regular_file(
-                self.root,
-                state.target,
-                path,
-                missing_ok=True,
-            ) is not None:
+            if (
+                _read_regular_file(
+                    self.root,
+                    state.target,
+                    path,
+                    missing_ok=True,
+                )
+                is not None
+            ):
                 raise ConfigError(f"managed path appeared during sync; retry: {path}")
             return
         current_state = _read_regular_file(
@@ -281,14 +285,17 @@ class SyncEngine:
         else:
             base = current if exists else self._scaffold(managed)
             base, namespace = self._block_namespace(service.name, managed, base)
+            prefix = managed.comment_prefix or comment_prefix_for(managed.path)
             desired = apply_block(
                 base,
                 service.name,
                 content,
-                managed.comment_prefix or comment_prefix_for(managed.path),
+                prefix,
                 namespace,
                 self._note_for(managed),
             )
+            if self.cleanup_duplicate_lines:
+                desired = dedupe_lines_outside_block(desired, content, prefix)
 
         if exists and desired == current:
             return None
@@ -320,7 +327,12 @@ class SyncEngine:
         names = ", ".join(sorted(existing_namespaces))
         if self.take_over_managed_files:
             for namespace in sorted(competing):
-                existing = remove_block(existing, service_name, namespace, managed.comment_prefix or comment_prefix_for(managed.path))
+                existing = remove_block(
+                    existing,
+                    service_name,
+                    namespace,
+                    managed.comment_prefix or comment_prefix_for(managed.path),
+                )
             return existing, configured
         raise ConfigError(
             f"block service '{service_name}' has unmanaged marker namespace(s): {names}; "

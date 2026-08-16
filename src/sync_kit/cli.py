@@ -24,6 +24,7 @@ from .catalog import load_catalog, resolve_services
 from .config import (
     MARKETPLACE_CONFIG_FILE,
     ai_settings,
+    cleanup_duplicate_lines,
     find_config,
     load_companion_config,
     load_repo_config,
@@ -58,7 +59,9 @@ DEFAULT_GLOBAL_CONFIG_PATH = ".github/blackout-secure-managed-file-sync-global-c
 
 
 def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--root", default=".", help="Repository root to sync (default: current directory)")
+    parser.add_argument(
+        "--root", default=".", help="Repository root to sync (default: current directory)"
+    )
     global_config = parser.add_mutually_exclusive_group()
     global_config.add_argument(
         "--use-global-config",
@@ -81,7 +84,9 @@ def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
             f"(default: {DEFAULT_GLOBAL_CONFIG_PATH})"
         ),
     )
-    parser.add_argument("--config", default=None, help="Path to repo-specific config file (overrides global)")
+    parser.add_argument(
+        "--config", default=None, help="Path to repo-specific config file (overrides global)"
+    )
     parser.add_argument(
         "--global-config-json",
         default=None,
@@ -97,12 +102,16 @@ def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="Relative path to managed file templates directory (default: .github/managed-files)",
     )
-    parser.add_argument("--services", default=None, help="Comma separated service list overriding the config")
+    parser.add_argument(
+        "--services", default=None, help="Comma separated service list overriding the config"
+    )
 
 
 def _add_sync_arguments(parser: argparse.ArgumentParser) -> None:
     _add_common_arguments(parser)
-    parser.add_argument("--no-diff", action="store_true", help="List changed files without unified diffs")
+    parser.add_argument(
+        "--no-diff", action="store_true", help="List changed files without unified diffs"
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -110,7 +119,9 @@ def build_parser() -> argparse.ArgumentParser:
         prog="bos-sync",
         description="Sync canonical managed files and managed blocks across repositories.",
     )
-    parser.add_argument("--version", action="version", version=f"bos-managed-file-sync {__version__}")
+    parser.add_argument(
+        "--version", action="version", version=f"bos-managed-file-sync {__version__}"
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     services = subparsers.add_parser("services", help="List the services in the resolved config")
@@ -121,10 +132,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     apply_cmd = subparsers.add_parser("apply", help="Reconcile the working tree")
     _add_sync_arguments(apply_cmd)
-    apply_cmd.add_argument("--dry-run", action="store_true", help="Report changes without writing files")
-    apply_cmd.add_argument("--fail-on-drift", action="store_true", help="Exit non-zero when changes are needed")
+    apply_cmd.add_argument(
+        "--dry-run", action="store_true", help="Report changes without writing files"
+    )
+    apply_cmd.add_argument(
+        "--fail-on-drift", action="store_true", help="Exit non-zero when changes are needed"
+    )
 
-    check = subparsers.add_parser("check", help="Drift gate: dry-run that fails when files are out of sync")
+    check = subparsers.add_parser(
+        "check", help="Drift gate: dry-run that fails when files are out of sync"
+    )
     _add_sync_arguments(check)
 
     return parser
@@ -165,9 +182,12 @@ class _Plan:
             managed_files_path=args.managed_files_path,
             section_is_merged=True,
         )
-        self.services = resolve_services(self.catalog, self.section, parse_service_list(args.services))
+        self.services = resolve_services(
+            self.catalog, self.section, parse_service_list(args.services)
+        )
         self.namespace = marker_namespace(self.section)
         self.take_over_managed_files = take_over_managed_files(self.section)
+        self.cleanup_duplicate_lines = cleanup_duplicate_lines(self.section)
         self.note = managed_note(self.section)
         self.variables = string_map(self.section.get("variables"))
 
@@ -235,12 +255,16 @@ def _failure_context(args: argparse.Namespace, plan: _Plan | None) -> FailureCon
     else:
         global_config = f"{args.global_config} (automatic)"
     mode = "dry-run" if getattr(args, "dry_run", False) or args.command == "check" else args.command
-    config_sources = plan.source_paths if plan is not None else (
-        f"{MARKETPLACE_CONFIG_FILE} (bundled)",
-        global_config,
-        *(('--global-config-json (inline)',) if args.global_config_json else ()),
-        args.config or "repository config (automatic discovery)",
-        *(('--config-json (inline)',) if args.config_json else ()),
+    config_sources = (
+        plan.source_paths
+        if plan is not None
+        else (
+            f"{MARKETPLACE_CONFIG_FILE} (bundled)",
+            global_config,
+            *(("--global-config-json (inline)",) if args.global_config_json else ()),
+            args.config or "repository config (automatic discovery)",
+            *(("--config-json (inline)",) if args.config_json else ()),
+        )
     )
     package = plan.package if plan is not None else package_metadata()
     return FailureContext(
@@ -248,7 +272,9 @@ def _failure_context(args: argparse.Namespace, plan: _Plan | None) -> FailureCon
         mode=mode,
         repository_root=str(plan.root if plan is not None else args.root),
         repository_config=str(
-            plan.config_file if plan is not None and plan.config_file else args.config or "automatic discovery"
+            plan.config_file
+            if plan is not None and plan.config_file
+            else args.config or "automatic discovery"
         ),
         global_config=str(
             plan.global_config_file
@@ -312,13 +338,17 @@ def _write_failure_report(
         else:
             provider = detect_provider(ai_config.ai_error_remediation_provider)
             if provider is None:
-                ai_status = "unavailable; deterministic fallback (no eligible provider or credential)"
+                ai_status = (
+                    "unavailable; deterministic fallback (no eligible provider or credential)"
+                )
             else:
                 recommendation = recommend_error(finding.ai_payload(), provider)
                 if recommendation is None:
                     ai_status = f"unavailable ({provider.name}); deterministic fallback"
                 else:
-                    ai_status = f"generated by {provider.name} ({provider.model or 'default model'})"
+                    ai_status = (
+                        f"generated by {provider.name} ({provider.model or 'default model'})"
+                    )
                     assisted = AssistedRemediation(
                         recommendation=recommendation.recommendation,
                         rationale=recommendation.rationale,
@@ -473,13 +503,17 @@ def _write_github_summary(
     review_rows = [
         ("use_marketplace_config", plan.section.get("use_marketplace_config", True)),
         ("take_over_managed_files", plan.take_over_managed_files),
+        ("cleanup_duplicate_lines", plan.cleanup_duplicate_lines),
         ("recommended_toolchain.advisory", toolchain.get("advisory")),
         ("recommended_toolchain.python.requires", recommended_python.get("requires")),
         ("recommended_toolchain.python.default_version", recommended_python.get("default_version")),
         ("recommended_toolchain.python.tested_versions", recommended_python.get("tested_versions")),
         ("recommended_toolchain.dependencies.build", recommended_dependencies.get("build")),
         ("recommended_toolchain.dependencies.runtime", recommended_dependencies.get("runtime")),
-        ("recommended_toolchain.dependencies.development", recommended_dependencies.get("development")),
+        (
+            "recommended_toolchain.dependencies.development",
+            recommended_dependencies.get("development"),
+        ),
         ("security.enable_python_lint", security.get("enable_python_lint")),
         ("security.python_version", security.get("python_version")),
         ("security.python_packages", security.get("python_packages")),
@@ -498,11 +532,17 @@ def _write_github_summary(
 
     recommendations: list[str] = []
     if plan.section.get("use_marketplace_config") is False:
-        recommendations.append("Marketplace defaults are intentionally disabled for this repo; confirm that custom policy is deliberate.")
+        recommendations.append(
+            "Marketplace defaults are intentionally disabled for this repo; confirm that custom policy is deliberate."
+        )
     else:
-        recommendations.append("Marketplace defaults remain enabled; repo policy is inheriting the standard baseline.")
+        recommendations.append(
+            "Marketplace defaults remain enabled; repo policy is inheriting the standard baseline."
+        )
     if security.get("enable_python_lint") is True:
-        recommendations.append(f"Python linting is enabled for {security.get('python_version', 'default')}.")
+        recommendations.append(
+            f"Python linting is enabled for {security.get('python_version', 'default')}."
+        )
     if toolchain.get("advisory") is True and recommended_python:
         recommendations.append(
             f"Recommended Python is {recommended_python.get('default_version', 'unspecified')} "
@@ -517,17 +557,25 @@ def _write_github_summary(
             f"runtime {serialize(runtime_dependencies)}; development {serialize(development_dependencies)}."
         )
     if repo_metadata.get("enable") is True:
-        recommendations.append(f"Repo metadata automation is enabled with homepage {repo_metadata.get('homepage') or '(unspecified)'}.")
+        recommendations.append(
+            f"Repo metadata automation is enabled with homepage {repo_metadata.get('homepage') or '(unspecified)'}."
+        )
     if allowlist:
         recommendations.append(f"Marketplace allowlist is limited to: {serialize(allowlist)}.")
     if blocked:
-        recommendations.append(f"Marketplace blocked paths are restricted to: {serialize(blocked)}.")
+        recommendations.append(
+            f"Marketplace blocked paths are restricted to: {serialize(blocked)}."
+        )
     if required:
         recommendations.append(f"Required marketplace paths are enforced: {serialize(required)}.")
     if excluded:
-        recommendations.append(f"Excluded services are intentionally skipped: {serialize(excluded)}.")
+        recommendations.append(
+            f"Excluded services are intentionally skipped: {serialize(excluded)}."
+        )
     if disabled:
-        recommendations.append(f"Disabled services are explicitly filtered out: {serialize(disabled)}.")
+        recommendations.append(
+            f"Disabled services are explicitly filtered out: {serialize(disabled)}."
+        )
     if plan.take_over_managed_files:
         recommendations.append(
             "Managed-file takeover is enabled; competing block sections may be removed during apply."
@@ -536,8 +584,18 @@ def _write_github_summary(
         recommendations.append(
             "Managed-file takeover is disabled; competing block namespaces fail safely and require explicit ownership configuration."
         )
+    if plan.cleanup_duplicate_lines:
+        recommendations.append(
+            "Duplicate-line cleanup is enabled; lines outside a managed block that duplicate its content are removed."
+        )
+    else:
+        recommendations.append(
+            "Duplicate-line cleanup is disabled; lines outside a managed block are never touched, even if they duplicate its content."
+        )
     if not recommendations:
-        recommendations.append("No extra policy overrides are configured; the repo is using the default marketplace baseline.")
+        recommendations.append(
+            "No extra policy overrides are configured; the repo is using the default marketplace baseline."
+        )
 
     action_labels = ["Already compliant"]
     action_labels.extend(["Created", "Updated", "Deleted"])
@@ -630,23 +688,26 @@ def _write_github_summary(
             ]
         )
 
-    lines.extend([
-        "## Configuration used",
-        "",
-        "### Resolved configuration",
-        "",
-        "<pre>",
-        f"config: {escaped(plan.config_file or '(none — using inputs and defaults)')}",
-        f"root: {escaped(plan.root)}",
-        f"direction: {escaped(plan.direction)}",
-        f"namespace: {escaped(plan.namespace)}",
-        f"take_over_managed_files: {'true' if plan.take_over_managed_files else 'false'}",
-        f"services: {escaped(', '.join(service.name for service in plan.services) if plan.services else '(none)')}",
-        f"mode: {'dry-run' if result.dry_run else 'apply'}",
-        f"config cascade: {escaped(serialize(list(plan.source_paths)))}",
-        "</pre>",
-        "",
-    ])
+    lines.extend(
+        [
+            "## Configuration used",
+            "",
+            "### Resolved configuration",
+            "",
+            "<pre>",
+            f"config: {escaped(plan.config_file or '(none — using inputs and defaults)')}",
+            f"root: {escaped(plan.root)}",
+            f"direction: {escaped(plan.direction)}",
+            f"namespace: {escaped(plan.namespace)}",
+            f"take_over_managed_files: {'true' if plan.take_over_managed_files else 'false'}",
+            f"cleanup_duplicate_lines: {'true' if plan.cleanup_duplicate_lines else 'false'}",
+            f"services: {escaped(', '.join(service.name for service in plan.services) if plan.services else '(none)')}",
+            f"mode: {'dry-run' if result.dry_run else 'apply'}",
+            f"config cascade: {escaped(serialize(list(plan.source_paths)))}",
+            "</pre>",
+            "",
+        ]
+    )
 
     if plan.ignored_metadata_keys:
         lines.extend(
@@ -681,6 +742,7 @@ def _write_github_summary(
             f"| Direction | <code>{escaped(plan.direction)}</code> |",
             f"| Marker namespace | <code>{escaped(plan.namespace)}</code> |",
             f"| Take over managed files | <code>{'enabled' if plan.take_over_managed_files else 'disabled'}</code> |",
+            f"| Duplicate-line cleanup | <code>{'enabled' if plan.cleanup_duplicate_lines else 'disabled'}</code> |",
             f"| Allowlist paths | <code>{escaped(serialize(allowlist))}</code> |",
             f"| Blocked paths | <code>{escaped(serialize(blocked))}</code> |",
             f"| Required paths | <code>{escaped(serialize(required))}</code> |",
@@ -694,7 +756,9 @@ def _write_github_summary(
         ]
     )
     for field, value in review_rows:
-        lines.append(f"| <code>{escaped(field)}</code> | <code>{escaped(serialize(value))}</code> |")
+        lines.append(
+            f"| <code>{escaped(field)}</code> | <code>{escaped(serialize(value))}</code> |"
+        )
 
     block_rows = [
         (service.name, managed.path, managed.mode, managed.marker_namespace or plan.namespace)
@@ -719,13 +783,15 @@ def _write_github_summary(
                 f"{'enabled' if plan.take_over_managed_files else 'disabled'} |"
             )
 
-    lines.extend([
-        "",
-        "## Recommended Actions",
-        "",
-        "### Review recommendations",
-        "",
-    ])
+    lines.extend(
+        [
+            "",
+            "## Recommended Actions",
+            "",
+            "### Review recommendations",
+            "",
+        ]
+    )
     for recommendation in recommendations:
         lines.append(f"- {escaped(recommendation)}")
 
@@ -833,6 +899,7 @@ def _run_sync(plan: _Plan, dry_run: bool, fail_on_drift: bool, show_diff: bool =
         namespace=plan.namespace,
         note=plan.note,
         take_over_managed_files=plan.take_over_managed_files,
+        cleanup_duplicate_lines=plan.cleanup_duplicate_lines,
         config_source=plan.config_source,
     )
     result = engine.sync(plan.services)
@@ -868,9 +935,7 @@ def _run_sync(plan: _Plan, dry_run: bool, fail_on_drift: bool, show_diff: bool =
 def _emit_diagnostic(message: str, *, level: str, annotations: bool) -> None:
     """Write an escaped GitHub annotation or a plain stderr message."""
     if annotations:
-        annotation = (
-            message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-        )
+        annotation = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
         print(f"::{level}::{annotation}", file=sys.stderr)
         return
     print(message, file=sys.stderr)
@@ -894,7 +959,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "services":
             for name in sorted(plan.catalog):
                 service = plan.catalog[name]
-                kind = f"bundle -> {', '.join(service.includes)}" if service.includes else service.mode
+                kind = (
+                    f"bundle -> {', '.join(service.includes)}" if service.includes else service.mode
+                )
                 print(f"{name} [{kind}] — {service.description}")
             return EXIT_OK
 

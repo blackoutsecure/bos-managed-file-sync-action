@@ -154,9 +154,7 @@ def render_block(
         sum(_is_marker_line(line, start) for line in rendered_lines) != 1
         or sum(_is_marker_line(line, end) for line in rendered_lines) != 1
     ):
-        raise MarkerError(
-            f"managed content or note for service '{service}' contains a marker line"
-        )
+        raise MarkerError(f"managed content or note for service '{service}' contains a marker line")
     return rendered
 
 
@@ -177,15 +175,9 @@ def apply_block(
     lines = existing.splitlines(keepends=True)
     start_marker, end_marker = marker_lines(service, prefix, namespace)
     start_indices = [
-        index
-        for index, line in enumerate(lines)
-        if _is_marker_line(line, start_marker)
+        index for index, line in enumerate(lines) if _is_marker_line(line, start_marker)
     ]
-    end_indices = [
-        index
-        for index, line in enumerate(lines)
-        if _is_marker_line(line, end_marker)
-    ]
+    end_indices = [index for index, line in enumerate(lines) if _is_marker_line(line, end_marker)]
 
     if not start_indices and not end_indices:
         line_ending = _preferred_line_ending(existing)
@@ -208,9 +200,7 @@ def apply_block(
         )
 
     start_offset = sum(len(line) for line in lines[:start_index])
-    end_offset = start_offset + sum(
-        len(line) for line in lines[start_index : end_index + 1]
-    )
+    end_offset = start_offset + sum(len(line) for line in lines[start_index : end_index + 1])
     line_ending = _line_ending(lines[start_index]) or _preferred_line_ending(existing)
     replacement = _use_line_ending(block, line_ending)
     replacement += _line_ending(lines[end_index])
@@ -224,9 +214,7 @@ def remove_block(existing: str, service: str, namespace: str, prefix: str) -> st
     start_indices = [
         index for index, line in enumerate(lines) if _is_marker_line(line, start_marker)
     ]
-    end_indices = [
-        index for index, line in enumerate(lines) if _is_marker_line(line, end_marker)
-    ]
+    end_indices = [index for index, line in enumerate(lines) if _is_marker_line(line, end_marker)]
     if len(start_indices) != 1 or len(end_indices) != 1:
         raise MarkerError(
             f"managed block for service '{service}' must contain exactly one start marker "
@@ -241,6 +229,77 @@ def remove_block(existing: str, service: str, namespace: str, prefix: str) -> st
     start_offset = sum(len(line) for line in lines[:start_index])
     end_offset = start_offset + sum(len(line) for line in lines[start_index : end_index + 1])
     return existing[:start_offset] + existing[end_offset:]
+
+
+def _marker_tag_pattern(prefix: str, arrows: str) -> re.Pattern[str]:
+    """Regex matching ANY service's marker line using ``arrows`` (``>>>``/``<<<``)."""
+    tag = r"[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+"
+    if "|" in prefix:
+        open_token, close_token = prefix.split("|", 1)
+        pattern = (
+            rf"^{re.escape(open_token)} {arrows} ({tag}) {arrows} {re.escape(close_token)}\s*$"
+        )
+    else:
+        pattern = rf"^{re.escape(prefix)} {arrows} ({tag}) {arrows}\s*$"
+    return re.compile(pattern)
+
+
+def _protected_line_indices(lines: list[str], prefix: str) -> list[bool]:
+    """Mark every line that falls inside ANY managed block (any service).
+
+    Depth-counted rather than tag-matched: a stray marker of a different
+    service must never be treated as "outside" text, even if this repo's
+    blocks happen to be malformed or overlapping — safety over precision.
+    """
+    start_re = _marker_tag_pattern(prefix, ">>>")
+    end_re = _marker_tag_pattern(prefix, "<<<")
+    protected = [False] * len(lines)
+    depth = 0
+    for index, line in enumerate(lines):
+        stripped = line.rstrip("\r\n")
+        is_start = bool(start_re.match(stripped))
+        is_end = bool(end_re.match(stripped))
+        if is_start:
+            depth += 1
+        if depth > 0:
+            protected[index] = True
+        if is_end and depth > 0:
+            depth -= 1
+    return protected
+
+
+def dedupe_lines_outside_block(
+    existing: str,
+    block_content: str,
+    prefix: str,
+) -> str:
+    """Remove lines outside any managed block that duplicate a block's content.
+
+    Intended to run right after :func:`apply_block` has placed the freshest
+    copy of ``block_content`` inside its markers. If the same line already
+    existed elsewhere in the file (e.g. a repo hand-added ``.venv/`` to
+    ``.gitignore`` before the managed block started covering it), that
+    now-redundant duplicate is dropped. Only exact-line matches (after
+    stripping whitespace) are removed; nothing inside ANY managed block
+    (this service's or another's) is ever touched, and blank lines are
+    never treated as "duplicates" of each other.
+    """
+    candidates = {
+        stripped
+        for line in block_content.splitlines()
+        if (stripped := line.strip())
+    }
+    if not candidates:
+        return existing
+    lines = existing.splitlines(keepends=True)
+    protected = _protected_line_indices(lines, prefix)
+    kept = [
+        line
+        for index, line in enumerate(lines)
+        if protected[index] or line.rstrip("\r\n").strip() not in candidates
+    ]
+    return "".join(kept)
+
 
 
 def _line_ending(line: str) -> str:

@@ -7,6 +7,7 @@
     "managed_note": "Managed by {{package_title}} — configure services in {{config_source}}.",
     "managed_files_path": ".github/managed-files",
     "take_over_managed_files": false,
+    "cleanup_duplicate_lines": false,
     "mode": "commit",
     "generate_commit_message": true,
     "fallback_commit_message": "chore: sync managed files",
@@ -59,6 +60,9 @@
               "__pycache__/",
               "*.py[cod]",
               ".venv/",
+              ".pytest_cache/",
+              ".ruff_cache/",
+              ".mypy_cache/",
               "",
               "# Local secrets (never commit these)",
               ".env",
@@ -167,17 +171,79 @@
           }
         ]
       },
+      "coverage_artifacts": {
+        "mode": "block",
+        "description": "Ignore Python test-coverage report artifacts. Opt-in — not everyone wants these ignored; some repos intentionally commit or publish them (e.g. a Pages-hosted coverage badge). Disable per repo with disabled_services: [coverage_artifacts] even when a higher tier (e.g. an org global config) enables it.",
+        "files": [
+          {
+            "path": ".gitignore",
+            "content_lines": [
+              ".coverage",
+              ".coverage.*",
+              "coverage.xml",
+              "htmlcov/"
+            ]
+          }
+        ]
+      },
       "shellcheck": {
         "mode": "block",
-        "description": "Shared ShellCheck configuration.",
+        "description": "Shared ShellCheck configuration. Assumes bash for extensionless composite-action run: blocks and disables SC2016/SC1091 (single-quoted ${{ github.* }} expressions and sourcing _lib/lib.sh by relative path both routinely flag false positives in this org's composites).",
         "files": [
           {
             "path": ".shellcheckrc",
             "content_lines": [
               "shell=bash",
-              "external-sources=true",
-              "enable=quote-safe-variables",
-              "enable=require-variable-braces"
+              "disable=SC2016,SC1091",
+              "external-sources=true"
+            ]
+          }
+        ]
+      },
+      "yamllint": {
+        "mode": "file",
+        "description": "Canonical yamllint configuration tuned for GitHub Actions workflow YAML (relaxed line-length, on:/truthy, and brace-style rules).",
+        "files": [
+          {
+            "path": ".yamllint.yml",
+            "content_lines": [
+              "extends: default",
+              "",
+              "ignore: |",
+              "  .git/",
+              "  .venv/",
+              "  node_modules/",
+              "  dist/",
+              "",
+              "rules:",
+              "  # GitHub Actions expressions and shell commands routinely exceed 120 cols.",
+              "  line-length:",
+              "    max: 200",
+              "    level: warning",
+              "",
+              "  # GitHub workflows legitimately use the key \"on:\" which yamllint",
+              "  # interprets as a truthy alias. Relax to warning so it doesn't fail.",
+              "  truthy:",
+              "    allowed-values: [\"true\", \"false\", \"on\", \"off\", \"yes\", \"no\"]",
+              "    check-keys: false",
+              "",
+              "  # Permit either flow- or block-style mapping; both appear in workflows.",
+              "  braces:",
+              "    level: warning",
+              "",
+              "  # Comments don't need to start with a space (some tooling emits \"#--\").",
+              "  comments:",
+              "    require-starting-space: false",
+              "    min-spaces-from-content: 1",
+              "",
+              "  # Indentation: 2 spaces, but allow sequences to be flush with parent.",
+              "  indentation:",
+              "    spaces: 2",
+              "    indent-sequences: consistent",
+              "    check-multi-line-strings: false",
+              "",
+              "  # Document-start markers (---) are noisy in workflow files.",
+              "  document-start: disable"
             ]
           }
         ]
@@ -214,19 +280,31 @@
       },
       "markdownlint": {
         "mode": "file",
-        "description": "Canonical markdownlint configuration.",
+        "description": "Canonical markdownlint configuration (YAML format). Also removes the legacy .markdownlint.json this service used to ship, which markdownlint-cli would otherwise prefer over the .yaml file, silently shadowing it.",
         "files": [
           {
-            "path": ".markdownlint.json",
+            "path": ".markdownlint.yaml",
             "content_lines": [
-              "{",
-              "  \"default\": true,",
-              "  \"MD013\": false,",
-              "  \"MD024\": { \"siblings_only\": true },",
-              "  \"MD033\": false,",
-              "  \"MD041\": false",
-              "}"
+              "default: true",
+              "",
+              "# Long URLs and code snippets are common in docs-heavy repos.",
+              "MD013: false",
+              "",
+              "MD024:",
+              "  siblings_only: true",
+              "",
+              "# GitHub admonitions and inline HTML are intentionally used.",
+              "MD028: false",
+              "MD033: false",
+              "MD034: false",
+              "",
+              "# Templates/release notes may start at H2.",
+              "MD041: false"
             ]
+          },
+          {
+            "path": ".markdownlint.json",
+            "mode": "absent"
           }
         ]
       },
@@ -242,10 +320,11 @@
         ]
       },
       "quality_baseline": {
-        "description": "Bundle: baseline repository hygiene plus ShellCheck and Prettier policy.",
+        "description": "Bundle: baseline repository hygiene plus ShellCheck, yamllint, and Prettier policy.",
         "includes": [
           "baseline",
           "shellcheck",
+          "yamllint",
           "prettier"
         ]
       }

@@ -59,9 +59,7 @@ def _read_content(
     """Resolve ``content`` / ``content_lines`` / ``content_file`` on an entry."""
     sources = [key for key in ("content", "content_lines", "content_file") if key in entry]
     if len(sources) != 1:
-        raise ConfigError(
-            "service file needs exactly one of: content, content_lines, content_file"
-        )
+        raise ConfigError("service file needs exactly one of: content, content_lines, content_file")
     if "content" in entry:
         content = entry["content"]
         if isinstance(content, list):
@@ -101,14 +99,18 @@ def parse_service(
 
     mode = str(spec.get("mode", "block"))
     if mode not in VALID_MODES:
-        raise ConfigError(f"service '{name}' has unknown mode '{mode}' (expected one of {VALID_MODES})")
+        raise ConfigError(
+            f"service '{name}' has unknown mode '{mode}' (expected one of {VALID_MODES})"
+        )
 
     includes = spec.get("includes")
     if includes is not None:
         if not isinstance(includes, list) or not includes:
             raise ConfigError(f"service '{name}' has an empty or non-list 'includes'")
         if "files" in spec:
-            raise ConfigError(f"service '{name}' must define either 'includes' or 'files', not both")
+            raise ConfigError(
+                f"service '{name}' must define either 'includes' or 'files', not both"
+            )
         return Service(
             name=name,
             mode=mode,
@@ -137,19 +139,16 @@ def parse_service(
             raise ConfigError(f"service '{name}' file '{path}' has unknown mode '{file_mode}'")
         scaffold = entry.get("scaffold")
         if scaffold is not None and file_mode != "block":
-            raise ConfigError(f"service '{name}' file '{path}': 'scaffold' only applies to block mode")
+            raise ConfigError(
+                f"service '{name}' file '{path}': 'scaffold' only applies to block mode"
+            )
         if isinstance(scaffold, list):
             scaffold = "\n".join(str(line) for line in scaffold)
         comment_prefix = entry.get("comment_prefix")
         if comment_prefix is not None:
             comment_prefix = str(comment_prefix)
-            if any(
-                ord(character) < 32 or ord(character) == 127
-                for character in comment_prefix
-            ):
-                raise ConfigError(
-                    f"service '{name}' file '{path}' has an invalid comment_prefix"
-                )
+            if any(ord(character) < 32 or ord(character) == 127 for character in comment_prefix):
+                raise ConfigError(f"service '{name}' file '{path}' has an invalid comment_prefix")
         marker_namespace = entry.get("marker_namespace")
         if marker_namespace is not None:
             marker_namespace = marker_identifier(
@@ -199,7 +198,11 @@ def load_catalog(
 
     raw: dict[str, Any] = {}
 
-    path_value = managed_files_path if managed_files_path is not None else effective_section.get("managed_files_path")
+    path_value = (
+        managed_files_path
+        if managed_files_path is not None
+        else effective_section.get("managed_files_path")
+    )
     if path_value in (None, ""):
         path_value = ".github/managed-files"
     rel_managed_path = normalize_relative_path(
@@ -218,9 +221,7 @@ def load_catalog(
     # `content_file` sources for repo/global service_definitions come from
     # managed_files_path. Destination is still set explicitly per service via
     # files[].path.
-    base_dirs: list[Path | _ContentRoot] = [
-        _ContentRoot(resolved_root, anchored_managed_path)
-    ]
+    base_dirs: list[Path | _ContentRoot] = [_ContentRoot(resolved_root, anchored_managed_path)]
 
     overrides = effective_section.get("service_definitions") or {}
     if not isinstance(overrides, dict):
@@ -273,8 +274,7 @@ def resolve_services(
 
     if unknown:
         missing_paths = ", ".join(
-            f"{CONFIG_SECTION}.service_definitions.{name}"
-            for name in sorted(set(unknown))
+            f"{CONFIG_SECTION}.service_definitions.{name}" for name in sorted(set(unknown))
         )
         available = ", ".join(sorted(catalog)) or "(none)"
         raise ConfigError(
@@ -339,9 +339,7 @@ def check_conflicts(services: Iterable[Service]) -> None:
             )
             claim = (service.name, path)
             if claim in claims:
-                raise ConfigError(
-                    f"service '{service.name}' claims path '{path}' more than once"
-                )
+                raise ConfigError(f"service '{service.name}' claims path '{path}' more than once")
             claims.add(claim)
             owner = owners.get(path)
             if owner is None:

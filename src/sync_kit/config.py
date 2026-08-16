@@ -288,9 +288,7 @@ def _load_bundled_config(path: str, *, label: str) -> dict[str, Any]:
     """Load a bundled config section from this package."""
     try:
         files = importlib.resources.files("sync_kit")
-        config_data = json.loads(
-            files.joinpath(path).read_text(encoding="utf-8")
-        )
+        config_data = json.loads(files.joinpath(path).read_text(encoding="utf-8"))
 
         if not isinstance(config_data, dict):
             raise ConfigError(f"{label} config root must be a JSON object")
@@ -428,6 +426,22 @@ def take_over_managed_files(section: dict[str, Any]) -> bool:
     )
 
 
+def cleanup_duplicate_lines(section: dict[str, Any]) -> bool:
+    """Whether block sync removes duplicate lines left outside a managed block.
+
+    Off by default: a line outside a managed block that happens to match one
+    the block also writes (e.g. a repo hand-added ``.venv/`` to ``.gitignore``
+    before a service started managing it) is left alone unless a caller opts
+    in, since removing text outside the marked region is a stronger action
+    than the rest of this tool takes anywhere else.
+    """
+    return _bool_field(
+        section.get("cleanup_duplicate_lines"),
+        "cleanup_duplicate_lines",
+        False,
+    )
+
+
 def sync_direction(section: dict[str, Any]) -> str:
     """Return the supported one-way sync direction."""
     direction = section.get("direction", DEFAULT_SYNC_DIRECTION)
@@ -545,7 +559,10 @@ def _runner_or_fallback(value: str | None, fallback: str) -> str:
         if (
             isinstance(parsed, list)
             and parsed
-            and all(isinstance(item, str) and item.strip() and _RUNNER_LABEL.fullmatch(item.strip()) for item in parsed)
+            and all(
+                isinstance(item, str) and item.strip() and _RUNNER_LABEL.fullmatch(item.strip())
+                for item in parsed
+            )
         ):
             return normalized
         return fallback
