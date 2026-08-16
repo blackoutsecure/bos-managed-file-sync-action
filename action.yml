@@ -14,6 +14,14 @@ inputs:
       requires it; `false` disables it.
     required: false
     default: 'auto'
+  use_marketplace_config:
+    description: >-
+      `true` (default) applies the bundled marketplace baseline config
+      first, then layers global/repo/inline config on top. Set `false` to
+      skip the bundled baseline entirely and rely solely on your
+      global/repository config.
+    required: false
+    default: 'true'
   global_config_path:
     description: >-
       Org/hub-level config path. Auto-discovered by default and merged as the
@@ -111,6 +119,7 @@ runs:
       working-directory: ${{ inputs.working_directory }}
       env:
         MFS_USE_GLOBAL_CONFIG:   ${{ inputs.use_global_config }}
+        MFS_USE_MARKETPLACE_CONFIG: ${{ inputs.use_marketplace_config }}
         MFS_GLOBAL_CONFIG_PATH:  ${{ inputs.global_config_path }}
         MFS_GLOBAL_CONFIG_JSON:  ${{ inputs.global_config_json }}
         MFS_CONFIG_PATH:         ${{ inputs.config_path }}
@@ -133,6 +142,15 @@ runs:
           false) args+=(--no-global-config) ;;
           *)
             echo "use_global_config must be 'auto', 'true', or 'false'" >&2
+            exit 2
+            ;;
+        esac
+
+        case "${MFS_USE_MARKETPLACE_CONFIG}" in
+          true|'') ;;
+          false) args+=(--no-marketplace-config) ;;
+          *)
+            echo "use_marketplace_config must be 'true' or 'false'" >&2
             exit 2
             ;;
         esac

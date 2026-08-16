@@ -309,6 +309,7 @@ def load_repo_config(
     config_json: str | dict[str, Any] | None = None,
     global_config_json: str | dict[str, Any] | None = None,
     ignored_metadata_keys: list[str] | None = None,
+    marketplace_applied: list[bool] | None = None,
 ) -> dict[str, Any]:
     """Load and merge marketplace + global + repo + inline config.
 
@@ -331,6 +332,10 @@ def load_repo_config(
         global_config_json: raw inline global config JSON object or serialized object string.
         ignored_metadata_keys: optional list that receives the reserved package
             metadata keys found (and dropped) across the cascade.
+        marketplace_applied: optional list that receives a single boolean
+            recording whether the bundled marketplace tier was actually
+            merged (accounts for both the ``use_marketplace`` argument and
+            any tier's own ``use_marketplace_config`` override).
 
     Returns:
         Merged ``managed_file_sync`` section from all applicable tiers, or {} if none provided.
@@ -378,6 +383,10 @@ def load_repo_config(
             True,
         ):
             merged = _merge_section(merged, without_metadata(marketplace_section))
+        else:
+            marketplace_enabled = False
+    if marketplace_applied is not None:
+        marketplace_applied.append(marketplace_enabled)
 
     for section in (global_section, global_inline_section, repo_section, repo_inline_section):
         if section:

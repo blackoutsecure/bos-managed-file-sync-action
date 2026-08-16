@@ -241,6 +241,7 @@ The SHA for any tag is `git rev-list -n 1 v1.0.0` against this repo, or the
 | Input | Default | Description |
 | --- | --- | --- |
 | `use_global_config` | `auto` | `auto` loads the org/hub-level global config when present. `true` requires it; `false` disables it. |
+| `use_marketplace_config` | `true` | `true` (default) applies the bundled marketplace baseline config first, then layers global/repo/inline config on top. Set `false` to skip the bundled baseline entirely and rely solely on your global/repository config. |
 | `global_config_path` | `.github/blackout-secure-managed-file-sync-global-config.json` | Org/hub-level config path. Auto-discovered by default and merged as the first tier; repo config (config_path) overrides it. |
 | `config_path` | _(none)_ | Path to the repo config file. Defaults to auto-discovery of `.github/bos-universal-config.json` (preferred), `bos-universal-config.json`, `managed-file-sync.json`, or `.managed-file-sync.json`. |
 | `global_config_json` | _(none)_ | Inline JSON object to merge with the org/hub-level config before the repo config is applied. Useful for one-off workflow runs without creating a file. |
@@ -458,7 +459,7 @@ Configuration is merged in cascade order; later tiers win.
 
 | # | Tier | Source | Notes |
 | --- | --- | --- | --- |
-| 1 | Marketplace defaults | Bundled [marketplace config](src/sync_kit/managed-file-sync-marketplace-config.json) | Conservative baseline services, marker namespace, managed note, and AI defaults. Disable with `use_marketplace_config: false`. |
+| 1 | Marketplace defaults | Bundled [marketplace config](src/sync_kit/managed-file-sync-marketplace-config.json) | Conservative baseline services, marker namespace, managed note, and AI defaults. Disable via the `use_marketplace_config: false` action input, or set `use_marketplace_config: false` in any config tier. |
 | 2 | Organization global config | `.github/blackout-secure-managed-file-sync-global-config.json` | Loaded automatically when present. `use_global_config: 'true'` requires it, `'false'` disables discovery. |
 | 3 | Repository config | `.github/bos-universal-config.json` (preferred), `bos-universal-config.json`, `managed-file-sync.json`, `.managed-file-sync.json` | Optional; repos inherit tiers 1–2 when absent. |
 | 4 | Workflow inputs | `services`, `config_json`, `global_config_json`, `managed_files_path` | Per-run control without touching config files. |
