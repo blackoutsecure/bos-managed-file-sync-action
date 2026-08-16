@@ -147,6 +147,37 @@ def test_file_service_can_suppress_managed_header(repo):
     assert repo.read(".github/workflows/ci.yml") == "name: CI\n"
 
 
+def test_disabled_managed_note_removes_legacy_file_header(repo):
+    repo.write(
+        "config.yml",
+        "# Managed by Blackout Secure Managed File Sync — configure services in config.\n"
+        "# Do not edit — every sync run overwrites this file.\n"
+        "name: config\n",
+    )
+    svc = service("config", "file", "config.yml", "name: config\n")
+
+    result = SyncEngine(repo.root, note="Managed by the hub.").sync([svc])
+
+    assert result.changed
+    assert repo.read("config.yml") == "name: config\n"
+
+
+def test_disabled_managed_note_removes_legacy_block_header(repo):
+    repo.write(
+        ".gitignore",
+        "# Managed by Blackout Secure Managed File Sync — configure services in config.\n"
+        "# Do not edit — every sync run overwrites this file.\n"
+        "# existing\n",
+    )
+    svc = service("common", "block", ".gitignore", "node_modules/\n")
+
+    SyncEngine(repo.root, note="Managed by the hub.").sync([svc])
+
+    result = repo.read(".gitignore")
+    assert "Managed by Blackout Secure" not in result
+    assert "# existing\n" in result
+
+
 def test_init_service_only_creates_when_missing(repo):
     svc = service("license", "init", "LICENSE", "canonical")
     assert SyncEngine(repo.root).sync([svc]).changes[0].action == "created"
