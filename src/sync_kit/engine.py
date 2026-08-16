@@ -346,6 +346,8 @@ class SyncEngine:
         return _with_final_newline(render(managed.scaffold, self.variables))
 
     def _note_for(self, managed: ManagedFile) -> str | None:
+        if not managed.include_managed_note:
+            return None
         if not self.note or not supports_comments(managed.path):
             return None
         return render(self.note, self.variables)
