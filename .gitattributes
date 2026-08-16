@@ -1,5 +1,4 @@
 # Windows command files require CRLF; the hub block covers all other text and binaries.
-*.bat text eol=crlf
 
 # >>> managed-file-sync:lf_line_endings >>>
 # Managed by Blackout Secure Managed File Sync — configure services in .github/bos-universal-config.json.
