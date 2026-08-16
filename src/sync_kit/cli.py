@@ -87,6 +87,20 @@ def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--config", default=None, help="Path to repo-specific config file (overrides global)"
     )
+    marketplace_config = parser.add_mutually_exclusive_group()
+    marketplace_config.add_argument(
+        "--use-marketplace-config",
+        action="store_true",
+        dest="use_marketplace_config",
+        help="Apply the bundled marketplace baseline config first (default).",
+    )
+    marketplace_config.add_argument(
+        "--no-marketplace-config",
+        action="store_false",
+        dest="use_marketplace_config",
+        help="Skip the bundled marketplace baseline; rely on global/repo config only.",
+    )
+    parser.set_defaults(use_marketplace_config=True)
     parser.add_argument(
         "--global-config-json",
         default=None,
@@ -164,12 +178,15 @@ class _Plan:
         else:
             self.global_config_file = global_config if global_config.is_file() else None
         self.ignored_metadata_keys: list[str] = []
+        self.marketplace_applied: list[bool] = []
         self.section = load_repo_config(
             config_file=self.config_file,
             global_config_file=self.global_config_file,
+            use_marketplace=args.use_marketplace_config,
             global_config_json=args.global_config_json,
             config_json=args.config_json,
             ignored_metadata_keys=self.ignored_metadata_keys,
+            marketplace_applied=self.marketplace_applied,
         )
         self.source_paths = self._source_paths(args)
         self.config_source = self._config_source()
@@ -194,7 +211,7 @@ class _Plan:
     def _source_paths(self, args: argparse.Namespace) -> tuple[str, ...]:
         """Applied config tiers, in precedence order."""
         sources: list[str] = []
-        if self.section.get("use_marketplace_config", True):
+        if self.marketplace_applied and self.marketplace_applied[0]:
             sources.append(f"{MARKETPLACE_CONFIG_FILE} (bundled)")
         if self.global_config_file:
             sources.append(str(self.global_config_file))
@@ -238,6 +255,7 @@ def _failure_ai_settings(
         section = load_repo_config(
             config_file=config_file,
             global_config_file=global_config_file,
+            use_marketplace=args.use_marketplace_config,
             global_config_json=args.global_config_json,
             config_json=args.config_json,
         )
@@ -501,7 +519,7 @@ def _write_github_summary(
     recommended_dependencies = toolchain.get("dependencies") or {}
 
     review_rows = [
-        ("use_marketplace_config", plan.section.get("use_marketplace_config", True)),
+        ("use_marketplace_config", bool(plan.marketplace_applied and plan.marketplace_applied[0])),
         ("take_over_managed_files", plan.take_over_managed_files),
         ("cleanup_duplicate_lines", plan.cleanup_duplicate_lines),
         ("recommended_toolchain.advisory", toolchain.get("advisory")),
@@ -531,7 +549,7 @@ def _write_github_summary(
     ]
 
     recommendations: list[str] = []
-    if plan.section.get("use_marketplace_config") is False:
+    if not (plan.marketplace_applied and plan.marketplace_applied[0]):
         recommendations.append(
             "Marketplace defaults are intentionally disabled for this repo; confirm that custom policy is deliberate."
         )

@@ -532,6 +532,24 @@ def test_reverse_direction_returns_config_exit_code(repo):
     assert main(["validate", "--root", str(repo.root)]) == EXIT_CONFIG
 
 
+def test_marketplace_config_can_be_disabled(repo, capsys):
+    custom_config = {
+        "services": ["custom"],
+        "service_definitions": {
+            "custom": {
+                "mode": "block",
+                "files": [{"path": ".gitignore", "content_lines": ["dist/"]}],
+            }
+        },
+    }
+    repo.write_config(custom_config)
+    assert main(["validate", "--root", str(repo.root)]) == EXIT_OK
+    assert "marketplace-config.json (bundled)" in capsys.readouterr().out
+
+    assert main(["validate", "--root", str(repo.root), "--no-marketplace-config"]) == EXIT_OK
+    assert "marketplace-config.json (bundled)" not in capsys.readouterr().out
+
+
 def test_custom_marker_namespace_from_config(repo):
     repo.write_config({"services": ["common"], "marker_namespace": "bos-automation-hub"})
     assert main(["apply", "--root", str(repo.root)]) == EXIT_OK
