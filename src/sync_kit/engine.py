@@ -6,6 +6,7 @@ import contextlib
 import difflib
 import errno
 import os
+import re
 import secrets
 import stat
 from collections.abc import Iterable
@@ -262,7 +263,10 @@ class SyncEngine:
         state: _FileState,
     ) -> Change | None:
         exists = state.exists
-        current = state.content
+        original = state.content
+        current = original
+        if not managed.include_managed_note:
+            current = _strip_legacy_managed_header(current)
 
         if managed.mode == "absent":
             if not exists:
@@ -297,7 +301,7 @@ class SyncEngine:
             if self.cleanup_duplicate_lines:
                 desired = dedupe_lines_outside_block(desired, content, prefix)
 
-        if exists and desired == current:
+        if exists and desired == original:
             return None
 
         state.exists = True
@@ -308,7 +312,7 @@ class SyncEngine:
             service=service.name,
             path=path,
             action="updated" if exists else "created",
-            before=current,
+            before=original,
             after=desired,
         )
 
@@ -370,6 +374,23 @@ class SyncEngine:
 
 def _with_final_newline(text: str) -> str:
     return text if text.endswith("\n") else text + "\n"
+
+
+def _strip_legacy_managed_header(text: str) -> str:
+    """Remove the legacy generated note when notes are now disabled."""
+    lines = text.splitlines(keepends=True)
+    if not lines:
+        return text
+
+    def normalized(line: str) -> str:
+        return re.sub(r"^(?:\s*#\s?|\s*<!--\s*|\s*-->\s*)", "", line).strip()
+
+    if "Managed by Blackout Secure Managed File Sync" not in normalized(lines[0]):
+        return text
+    remove = 1
+    if len(lines) > 1 and "Do not edit — every sync run overwrites" in normalized(lines[1]):
+        remove = 2
+    return "".join(lines[remove:])
 
 
 @dataclass
