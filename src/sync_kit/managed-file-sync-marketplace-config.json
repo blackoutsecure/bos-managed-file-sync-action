@@ -201,7 +201,7 @@
         ]
       },
       "yamllint": {
-        "mode": "file",
+        "mode": "block",
         "description": "Canonical yamllint configuration tuned for GitHub Actions workflow YAML (relaxed line-length, on:/truthy, and brace-style rules).",
         "files": [
           {
