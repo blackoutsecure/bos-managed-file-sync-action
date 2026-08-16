@@ -1,6 +1,7 @@
 root = true
 
 # >>> managed-file-sync:editorconfig >>>
+# Managed by Blackout Secure Managed File Sync — configure services in .github/bos-universal-config.json.
 [*]
 charset = utf-8
 end_of_line = lf
