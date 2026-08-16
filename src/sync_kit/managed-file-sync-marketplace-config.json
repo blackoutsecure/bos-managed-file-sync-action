@@ -4,7 +4,7 @@
     "use_marketplace_config": true,
     "use_marketplace_services": true,
     "marker_namespace": "managed-file-sync",
-    "managed_note": "Managed by {{package_title}} — configure services in {{config_source}}.",
+    "managed_note": false,
     "managed_files_path": ".github/managed-files",
     "take_over_managed_files": false,
     "cleanup_duplicate_lines": false,
