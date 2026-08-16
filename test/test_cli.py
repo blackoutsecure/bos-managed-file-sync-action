@@ -539,7 +539,20 @@ def test_custom_marker_namespace_from_config(repo):
 
 
 def test_managed_note_from_config(repo):
-    repo.write_config({"services": ["common"], "managed_note": "Managed by the hub."})
+    repo.write_config({
+        "services": ["note_test"],
+        "managed_note": "Managed by the hub.",
+        "service_definitions": {
+            "note_test": {
+                "mode": "block",
+                "files": [{
+                    "path": ".gitignore",
+                    "content_lines": ["node_modules/"],
+                    "include_managed_note": True,
+                }],
+            }
+        },
+    })
     assert main(["apply", "--root", str(repo.root)]) == EXIT_OK
     assert "# Managed by the hub." in repo.read(".gitignore")
 

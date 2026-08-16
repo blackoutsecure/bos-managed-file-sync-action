@@ -12,8 +12,18 @@ from sync_kit.engine import SyncEngine
 from sync_kit.errors import ConfigError, MarkerError
 
 
-def service(name: str, mode: str, path: str, content: str):
-    return parse_service(name, {"mode": mode, "files": [{"path": path, "content": content}]})
+def service(name: str, mode: str, path: str, content: str, *, include_managed_note: bool = False):
+    return parse_service(
+        name,
+        {
+            "mode": mode,
+            "files": [{
+                "path": path,
+                "content": content,
+                "include_managed_note": include_managed_note,
+            }],
+        },
+    )
 
 
 def test_block_service_creates_file(repo):
@@ -541,13 +551,13 @@ def test_concurrent_parent_symlink_swap_cannot_redirect_read(repo, monkeypatch):
 
 def test_note_is_written_into_blocks(repo):
     engine = SyncEngine(repo.root, note="Managed by the hub.")
-    engine.sync([service("common", "block", ".gitignore", "node_modules/")])
+    engine.sync([service("common", "block", ".gitignore", "node_modules/", include_managed_note=True)])
     assert "# Managed by the hub." in repo.read(".gitignore")
 
 
 def test_note_becomes_a_header_for_whole_files(repo):
     engine = SyncEngine(repo.root, note="Managed by the hub.")
-    engine.sync([service("script", "file", "run.sh", "#!/usr/bin/env bash\necho hi\n")])
+    engine.sync([service("script", "file", "run.sh", "#!/usr/bin/env bash\necho hi\n", include_managed_note=True)])
     lines = repo.read("run.sh").splitlines()
     assert lines[0] == "#!/usr/bin/env bash"
     assert lines[1] == "# Managed by the hub."
@@ -556,7 +566,7 @@ def test_note_becomes_a_header_for_whole_files(repo):
 
 def test_header_does_not_join_a_shebang_without_a_trailing_newline(repo):
     engine = SyncEngine(repo.root, note="Managed by the hub.")
-    engine.sync([service("script", "file", "run.sh", "#!/usr/bin/env bash")])
+    engine.sync([service("script", "file", "run.sh", "#!/usr/bin/env bash", include_managed_note=True)])
 
     lines = repo.read("run.sh").splitlines()
     assert lines[0] == "#!/usr/bin/env bash"
@@ -565,7 +575,7 @@ def test_header_does_not_join_a_shebang_without_a_trailing_newline(repo):
 
 def test_init_header_says_the_file_is_safe_to_edit(repo):
     engine = SyncEngine(repo.root, note="Managed by the hub.")
-    engine.sync([service("lic", "init", "LICENSE", "text")])
+    engine.sync([service("lic", "init", "LICENSE", "text", include_managed_note=True)])
     assert "safe to customize" in repo.read("LICENSE")
 
 

@@ -37,8 +37,8 @@ class ManagedFile:
     mode: str
     comment_prefix: str | None = None
     marker_namespace: str | None = None
-    # None inherits the section-level managed note; False suppresses it.
-    include_managed_note: bool | None = None
+    # Managed notes are opt-in; True enables the section-level note.
+    include_managed_note: bool = False
     # Written once, before the first block, when a block-mode file is created.
     scaffold: str | None = None
 
@@ -157,8 +157,8 @@ def parse_service(
                 marker_namespace,
                 f"service '{name}' file '{path}' marker_namespace",
             )
-        include_managed_note = entry.get("include_managed_note")
-        if include_managed_note is not None and not isinstance(include_managed_note, bool):
+        include_managed_note = entry.get("include_managed_note", False)
+        if not isinstance(include_managed_note, bool):
             raise ConfigError(
                 f"service '{name}' file '{path}' has invalid include_managed_note"
             )
