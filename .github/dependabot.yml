@@ -16,6 +16,7 @@ version: 2
 updates:
 
 # >>> managed-file-sync:dependabot_actions >>>
+# Managed by Blackout Secure Managed File Sync — configure services in .github/bos-universal-config.json.
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
@@ -27,6 +28,7 @@ updates:
 # <<< managed-file-sync:dependabot_actions <<<
 
 # >>> managed-file-sync:dependabot_pip >>>
+# Managed by Blackout Secure Managed File Sync — configure services in .github/bos-universal-config.json.
   - package-ecosystem: pip
     directory: /
     target-branch: dev
