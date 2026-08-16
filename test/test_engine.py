@@ -117,6 +117,26 @@ def test_file_service_overwrites(repo):
     assert result.changes[0].action == "updated"
 
 
+def test_file_service_can_suppress_managed_header(repo):
+    svc = parse_service(
+        "workflow",
+        {
+            "mode": "file",
+            "files": [
+                {
+                    "path": ".github/workflows/ci.yml",
+                    "content": "name: CI\n",
+                    "include_managed_note": False,
+                }
+            ],
+        },
+    )
+
+    SyncEngine(repo.root, note="Managed by the hub.").sync([svc])
+
+    assert repo.read(".github/workflows/ci.yml") == "name: CI\n"
+
+
 def test_init_service_only_creates_when_missing(repo):
     svc = service("license", "init", "LICENSE", "canonical")
     assert SyncEngine(repo.root).sync([svc]).changes[0].action == "created"
