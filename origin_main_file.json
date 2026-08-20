@@ -1,0 +1,336 @@
+{
+  "managed_file_sync": {
+    "direction": "source-to-destination",
+    "use_marketplace_config": true,
+    "use_marketplace_services": true,
+    "marker_namespace": "managed-file-sync",
+    "managed_note": false,
+    "managed_files_path": ".github/managed-files",
+    "take_over_managed_files": false,
+    "cleanup_duplicate_lines": false,
+    "mode": "commit",
+    "generate_commit_message": true,
+    "fallback_commit_message": "chore: sync managed files",
+    "git_user_name": "github-actions[bot]",
+    "git_user_email": "41898282+github-actions[bot]@users.noreply.github.com",
+    "push_retries": 3,
+    "runs_on": "ubuntu-latest",
+    "timeout_minutes": 5,
+    "services": [
+      "common",
+      "lf_line_endings",
+      "markdownlint",
+      "dependabot_actions",
+      "dependabot_pip",
+      "editorconfig"
+    ],
+    "exclude_services": [],
+    "disabled_services": [],
+    "ai": {
+      "enable_ai_drift_summary": true,
+      "ai_drift_summary_provider": "auto",
+      "enable_ai_error_remediation": true,
+      "ai_error_remediation_provider": "auto",
+      "local_heuristic_fallback": true
+    },
+    "variables": {
+      "fallback_default_runner": "ubuntu-latest"
+    },
+    "service_definitions": {
+      "common": {
+        "mode": "block",
+        "description": "Common ignore rules shared by most repositories.",
+        "files": [
+          {
+            "path": ".gitignore",
+            "content_lines": [
+              "# OS + editor noise",
+              ".DS_Store",
+              "Thumbs.db",
+              "*.swp",
+              ".idea/",
+              ".vscode/*",
+              "!.vscode/extensions.json",
+              "",
+              "# Build + dependency output",
+              "node_modules/",
+              "dist/",
+              "build/",
+              "coverage/",
+              "__pycache__/",
+              "*.py[cod]",
+              ".venv/",
+              ".pytest_cache/",
+              ".ruff_cache/",
+              ".mypy_cache/",
+              "",
+              "# Local secrets (never commit these)",
+              ".env",
+              ".env.*",
+              "!.env.example"
+            ]
+          }
+        ]
+      },
+      "lf_line_endings": {
+        "mode": "block",
+        "description": "Normalize line endings to LF and mark common binary types.",
+        "files": [
+          {
+            "path": ".gitattributes",
+            "content_lines": [
+              "* text=auto eol=lf",
+              "*.sh text eol=lf",
+              "*.bat text eol=crlf",
+              "*.png binary",
+              "*.jpg binary",
+              "*.gif binary",
+              "*.ico binary",
+              "*.pdf binary",
+              "*.zip binary"
+            ]
+          }
+        ]
+      },
+      "dependabot_actions": {
+        "mode": "block",
+        "description": "Dependabot updates for GitHub Actions workflows.",
+        "files": [
+          {
+            "path": ".github/dependabot.yml",
+            "scaffold": [
+              "version: 2",
+              "updates:"
+            ],
+            "content_lines": [
+              "  - package-ecosystem: github-actions",
+              "    directory: \"/\"",
+              "    schedule:",
+              "      interval: weekly",
+              "    commit-message:",
+              "      prefix: \"chore(deps)\"",
+              "    labels:",
+              "      - dependencies"
+            ]
+          }
+        ]
+      },
+      "dependabot_pip": {
+        "mode": "block",
+        "description": "Dependabot updates for Python packages.",
+        "files": [
+          {
+            "path": ".github/dependabot.yml",
+            "content_lines": [
+              "  - package-ecosystem: pip",
+              "    directory: /",
+              "    target-branch: dev",
+              "    schedule:",
+              "      interval: weekly",
+              "      day: monday",
+              "      time: \"06:00\"",
+              "      timezone: \"Etc/UTC\"",
+              "    open-pull-requests-limit: 5",
+              "    commit-message:",
+              "      prefix: \"chore\"",
+              "      include: scope",
+              "    labels:",
+              "      - dependencies",
+              "      - python"
+            ]
+          }
+        ]
+      },
+      "editorconfig": {
+        "mode": "block",
+        "description": "Baseline editor configuration managed in a dedicated block.",
+        "files": [
+          {
+            "path": ".editorconfig",
+            "scaffold": [
+              "root = true"
+            ],
+            "content_lines": [
+              "[*]",
+              "charset = utf-8",
+              "end_of_line = lf",
+              "insert_final_newline = true",
+              "trim_trailing_whitespace = true",
+              "indent_style = space",
+              "indent_size = 2",
+              "",
+              "[*.py]",
+              "indent_size = 4",
+              "",
+              "[*.md]",
+              "trim_trailing_whitespace = false",
+              "",
+              "[Makefile]",
+              "indent_style = tab"
+            ]
+          }
+        ]
+      },
+      "coverage_artifacts": {
+        "mode": "block",
+        "description": "Ignore Python test-coverage report artifacts. Opt-in — not everyone wants these ignored; some repos intentionally commit or publish them (e.g. a Pages-hosted coverage badge). Disable per repo with disabled_services: [coverage_artifacts] even when a higher tier (e.g. an org global config) enables it.",
+        "files": [
+          {
+            "path": ".gitignore",
+            "content_lines": [
+              ".coverage",
+              ".coverage.*",
+              "coverage.xml",
+              "htmlcov/"
+            ]
+          }
+        ]
+      },
+      "shellcheck": {
+        "mode": "block",
+        "description": "Shared ShellCheck configuration. Assumes bash for extensionless composite-action run: blocks and disables SC2016/SC1091 (single-quoted ${{ github.* }} expressions and sourcing _lib/lib.sh by relative path both routinely flag false positives in this org's composites).",
+        "files": [
+          {
+            "path": ".shellcheckrc",
+            "content_lines": [
+              "shell=bash",
+              "disable=SC2016,SC1091",
+              "external-sources=true"
+            ]
+          }
+        ]
+      },
+      "yamllint": {
+        "mode": "block",
+        "description": "Canonical yamllint configuration tuned for GitHub Actions workflow YAML (relaxed line-length, on:/truthy, and brace-style rules).",
+        "files": [
+          {
+            "path": ".yamllint.yml",
+            "content_lines": [
+              "extends: default",
+              "",
+              "ignore: |",
+              "  .git/",
+              "  .venv/",
+              "  node_modules/",
+              "  dist/",
+              "",
+              "rules:",
+              "  # GitHub Actions expressions and shell commands routinely exceed 120 cols.",
+              "  line-length:",
+              "    max: 200",
+              "    level: warning",
+              "",
+              "  # GitHub workflows legitimately use the key \"on:\" which yamllint",
+              "  # interprets as a truthy alias. Relax to warning so it doesn't fail.",
+              "  truthy:",
+              "    allowed-values: [\"true\", \"false\", \"on\", \"off\", \"yes\", \"no\"]",
+              "    check-keys: false",
+              "",
+              "  # Permit either flow- or block-style mapping; both appear in workflows.",
+              "  braces:",
+              "    level: warning",
+              "",
+              "  # Comments don't need to start with a space (some tooling emits \"#--\").",
+              "  comments:",
+              "    require-starting-space: false",
+              "    min-spaces-from-content: 1",
+              "",
+              "  # Managed-file markers delimit generated blocks under mappings.",
+              "  comments-indentation: disable",
+              "",
+              "  # Indentation: 2 spaces, but allow sequences to be flush with parent.",
+              "  indentation:",
+              "    spaces: 2",
+              "    indent-sequences: consistent",
+              "    check-multi-line-strings: false",
+              "",
+              "  # Document-start markers (---) are noisy in workflow files.",
+              "  document-start: disable"
+            ]
+          }
+        ]
+      },
+      "prettier": {
+        "mode": "block",
+        "description": "Shared Prettier ignore rules (config file is created if missing).",
+        "files": [
+          {
+            "path": ".prettierignore",
+            "content_lines": [
+              "node_modules/",
+              "dist/",
+              "build/",
+              "coverage/",
+              "*.min.js",
+              "*.min.css"
+            ]
+          },
+          {
+            "path": ".prettierrc.json",
+            "mode": "init",
+            "content_lines": [
+              "{",
+              "  \"printWidth\": 100,",
+              "  \"singleQuote\": false,",
+              "  \"semi\": true,",
+              "  \"trailingComma\": \"es5\",",
+              "  \"endOfLine\": \"lf\"",
+              "}"
+            ]
+          }
+        ]
+      },
+      "markdownlint": {
+        "mode": "file",
+        "description": "Canonical markdownlint configuration (YAML format). Also removes the legacy .markdownlint.json this service used to ship, which markdownlint-cli would otherwise prefer over the .yaml file, silently shadowing it.",
+        "files": [
+          {
+            "path": ".markdownlint.yaml",
+            "content_lines": [
+              "default: true",
+              "",
+              "# Long URLs and code snippets are common in docs-heavy repos.",
+              "MD013: false",
+              "",
+              "MD024:",
+              "  siblings_only: true",
+              "",
+              "# GitHub admonitions and inline HTML are intentionally used.",
+              "MD028: false",
+              "MD033: false",
+              "MD034: false",
+              "",
+              "# Templates/release notes may start at H2.",
+              "MD041: false"
+            ]
+          },
+          {
+            "path": ".markdownlint.json",
+            "mode": "absent"
+          }
+        ]
+      },
+      "baseline": {
+        "description": "Bundle: the services most repositories want on day one.",
+        "includes": [
+          "common",
+          "lf_line_endings",
+          "editorconfig",
+          "markdownlint",
+          "dependabot_actions",
+          "dependabot_pip"
+        ]
+      },
+      "quality_baseline": {
+        "description": "Bundle: baseline repository hygiene plus ShellCheck, yamllint, and Prettier policy.",
+        "includes": [
+          "baseline",
+          "shellcheck",
+          "yamllint",
+          "prettier"
+        ]
+      }
+    }
+  }
+}
