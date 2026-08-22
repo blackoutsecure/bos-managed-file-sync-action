@@ -352,6 +352,8 @@ individual entry in `files` can override it.
 | `shellcheck` | block | `.shellcheckrc` | — |
 | `yamllint` | file | `.yamllint.yml` | — |
 | `coverage_artifacts` | block | `.gitignore` | — |
+| `python_ecosystem` | block | `.gitignore` | — |
+| `node_ecosystem` | block | `.gitignore` | — |
 | `prettier` | block + init | `.prettierignore`, `.prettierrc.json` | — |
 | `baseline` | bundle | `common`, `lf_line_endings`, `editorconfig`, `markdownlint`, `dependabot_actions`, `dependabot_pip` | — |
 | `quality_baseline` | bundle | `baseline`, `shellcheck`, `yamllint`, `prettier` | — |
@@ -375,6 +377,11 @@ customize its formatter config without later being overwritten.
 config) can enable it for every repo by adding it to `services`; any repo can
 still opt back out for itself with `disabled_services: ["coverage_artifacts"]`
 — a repo's own exclusion always wins over another tier's enablement.
+
+`python_ecosystem` and `node_ecosystem` cover per-language build/test
+artifacts (venvs, caches, `*.egg-info/`, `npm-debug.log*`, etc.) that only
+make sense for repos actually using that language — unlike `common`, they're
+opt-in so a Node-only repo isn't carrying Python ignore rules and vice versa.
 
 `editorconfig` and `prettier` have distinct ownership boundaries:
 

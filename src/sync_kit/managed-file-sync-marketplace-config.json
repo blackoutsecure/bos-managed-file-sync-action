@@ -48,9 +48,34 @@
               ".DS_Store",
               "Thumbs.db",
               "*.swp",
+              "*.swo",
+              "*~",
+              "*.code-workspace",
               ".idea/",
               ".vscode/*",
               "!.vscode/extensions.json",
+              "*.sublime-project",
+              "*.sublime-workspace",
+              ".vs/",
+              "",
+              "# macOS resource forks (created on non-HFS volumes / network shares)",
+              "._*",
+              ".AppleDouble",
+              ".LSOverride",
+              "",
+              "# Windows noise",
+              "ehthumbs.db",
+              "Desktop.ini",
+              "$RECYCLE.BIN/",
+              "",
+              "# Archives",
+              "*.zip",
+              "*.tar",
+              "*.tar.gz",
+              "*.tgz",
+              "*.7z",
+              "*.rar",
+              "*.iso",
               "",
               "# Build + dependency output",
               "node_modules/",
@@ -65,10 +90,28 @@
               ".ruff_cache/",
               ".mypy_cache/",
               "",
+              "# Logs / temp files",
+              "*.log",
+              "*.tmp",
+              "*.bak",
+              ".tmp/",
+              ".cache/",
+              "",
+              "# Merge / patch conflict artifacts",
+              "*.orig",
+              "*.rej",
+              "",
               "# Local secrets (never commit these)",
               ".env",
               ".env.*",
-              "!.env.example"
+              "!.env.example",
+              "*.pem",
+              "*.key",
+              "*.crt",
+              "*.p12",
+              "*.pfx",
+              "secrets.*",
+              ".secrets/"
             ]
           }
         ]
@@ -187,6 +230,57 @@
           }
         ]
       },
+      "python_ecosystem": {
+        "mode": "block",
+        "description": "Python-ecosystem ignore rules for repos that build/test with Python (venvs, caches, packaging output). Opt-in — Node-only or docs-only repos don't need it.",
+        "files": [
+          {
+            "path": ".gitignore",
+            "content_lines": [
+              "**/__pycache__/",
+              "**/.venv/",
+              "**/venv/",
+              "**/env/",
+              "**/.pytest_cache/",
+              "**/.ruff_cache/",
+              "**/.mypy_cache/",
+              "**/.tox/",
+              "**/.nox/",
+              "**/.coverage",
+              "**/coverage.xml",
+              "**/htmlcov/",
+              "*$py.class",
+              "*.egg",
+              "*.egg-info/",
+              ".eggs/"
+            ]
+          }
+        ]
+      },
+      "node_ecosystem": {
+        "mode": "block",
+        "description": "Node-ecosystem ignore rules for repos that build/test with npm/yarn/pnpm. Opt-in — Python-only or docs-only repos don't need it.",
+        "files": [
+          {
+            "path": ".gitignore",
+            "content_lines": [
+              "npm-debug.log*",
+              "yarn-debug.log*",
+              "yarn-error.log*",
+              ".pnpm-debug.log*",
+              "lerna-debug.log*",
+              ".eslintcache",
+              ".nyc_output/",
+              "*.lcov",
+              "logs/",
+              "*.out",
+              "*.pid",
+              "test-results/",
+              ".test-output/"
+            ]
+          }
+        ]
+      },
       "shellcheck": {
         "mode": "block",
         "description": "Shared ShellCheck configuration. Assumes bash for extensionless composite-action run: blocks and disables SC2016/SC1091 (single-quoted ${{ github.* }} expressions and sourcing _lib/lib.sh by relative path both routinely flag false positives in this org's composites).",
@@ -273,9 +367,9 @@
             "content_lines": [
               "{",
               "  \"printWidth\": 100,",
-              "  \"singleQuote\": false,",
+              "  \"singleQuote\": true,",
               "  \"semi\": true,",
-              "  \"trailingComma\": \"es5\",",
+              "  \"trailingComma\": \"all\",",
               "  \"endOfLine\": \"lf\"",
               "}"
             ]
