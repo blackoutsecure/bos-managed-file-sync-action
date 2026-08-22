@@ -144,6 +144,13 @@ def _merge_section(base: dict[str, Any], override: dict[str, Any]) -> dict[str, 
         elif override_value is not None:
             merged[key] = _string_list(override_value, key)
 
+    base_patches = base.get("file_patches")
+    override_patches = override.get("file_patches")
+    if isinstance(base_patches, list) and isinstance(override_patches, list):
+        merged["file_patches"] = [*base_patches, *override_patches]
+    elif override_patches is not None and not isinstance(override_patches, list):
+        raise ConfigError("'file_patches' must be an array")
+
     return merged
 
 

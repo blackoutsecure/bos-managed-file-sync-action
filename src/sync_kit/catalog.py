@@ -9,7 +9,7 @@ Services are pure data — nothing here is executed, fetched, or evaluated.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -237,6 +237,58 @@ def load_catalog(
     raw.update(overrides)
 
     return {name: parse_service(name, spec, base_dirs) for name, spec in raw.items()}
+
+
+def apply_file_patches(
+    catalog: dict[str, Service],
+    patches: Iterable[dict[str, Any]] | None,
+) -> dict[str, Service]:
+    """Apply ordered exact-line patches to inherited managed file content."""
+    patched = dict(catalog)
+    for index, patch in enumerate(patches or []):
+        if not isinstance(patch, dict):
+            raise ConfigError(f"file_patches[{index}] must be an object")
+        service_name = marker_identifier(
+            patch.get("service", ""), f"file_patches[{index}].service"
+        )
+        path = normalize_relative_path(
+            patch.get("path", ""),
+            key=f"file_patches[{index}].path",
+        )
+        service = patched.get(service_name)
+        if service is None:
+            raise ConfigError(f"file_patches[{index}] references unknown service '{service_name}'")
+        matching = [managed for managed in service.files if managed.path == path]
+        if len(matching) != 1:
+            raise ConfigError(
+                f"file_patches[{index}] must reference exactly one file in "
+                f"service '{service_name}': '{path}'"
+            )
+        managed = matching[0]
+        if managed.mode == "absent":
+            raise ConfigError(f"file_patches[{index}] cannot patch absent file '{path}'")
+
+        remove = _patch_lines(patch.get("remove", []), index, "remove")
+        append = _patch_lines(patch.get("append", []), index, "append")
+        lines = managed.content.splitlines()
+        lines = [line for line in lines if line not in remove]
+        for line in append:
+            if line not in lines:
+                lines.append(line)
+
+        updated = replace(managed, content="\n".join(lines))
+        patched[service_name] = replace(
+            service,
+            files=tuple(updated if item.path == path else item for item in service.files),
+        )
+    return patched
+
+
+def _patch_lines(value: Any, index: int, operation: str) -> list[str]:
+    """Validate an exact-line patch operation."""
+    if not isinstance(value, list) or any(not isinstance(line, str) for line in value):
+        raise ConfigError(f"file_patches[{index}].{operation} must be an array of strings")
+    return value
 
 
 def resolve_services(

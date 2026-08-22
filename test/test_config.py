@@ -569,6 +569,40 @@ def test_global_and_repo_configs_merge(repo):
     assert config["variables"]["project_name"] == "my-project"
 
 
+def test_file_patches_append_in_marketplace_global_repo_order(repo):
+    global_path = repo.write(
+        ".github/blackout-secure-managed-file-sync-global-config.json",
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "file_patches": [
+                        {"service": "common", "path": ".gitignore", "append": ["global/"]}
+                    ]
+                }
+            }
+        ),
+    )
+    repo_path = repo.write(
+        "bos-universal-config.json",
+        json.dumps(
+            {
+                "managed_file_sync": {
+                    "file_patches": [
+                        {"service": "common", "path": ".gitignore", "append": ["repo/"]}
+                    ]
+                }
+            }
+        ),
+    )
+
+    config = load_repo_config(repo_path, global_path, use_marketplace=True)
+
+    assert config["file_patches"] == [
+        {"service": "common", "path": ".gitignore", "append": ["global/"]},
+        {"service": "common", "path": ".gitignore", "append": ["repo/"]},
+    ]
+
+
 def test_marketplace_global_and_repo_cascade(repo):
     """All three tiers should merge in cascade."""
     global_path = repo.write(

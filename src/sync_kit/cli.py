@@ -20,7 +20,7 @@ import sys
 
 from . import __version__
 from .ai import AISettings, detect_provider, recommend_error, summarize
-from .catalog import load_catalog, resolve_services
+from .catalog import apply_file_patches, load_catalog, resolve_services
 from .config import (
     MARKETPLACE_CONFIG_FILE,
     ai_settings,
@@ -199,6 +199,7 @@ class _Plan:
             managed_files_path=args.managed_files_path,
             section_is_merged=True,
         )
+        self.catalog = apply_file_patches(self.catalog, self.section.get("file_patches"))
         self.services = resolve_services(
             self.catalog, self.section, parse_service_list(args.services)
         )

@@ -56,6 +56,7 @@
               "node_modules/",
               "dist/",
               "build/",
+              ".astro/",
               "coverage/",
               "__pycache__/",
               "*.py[cod]",

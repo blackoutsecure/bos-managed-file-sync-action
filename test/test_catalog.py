@@ -6,7 +6,13 @@ import pytest
 
 import sync_kit.catalog as catalog_module
 import sync_kit.paths as paths_module
-from sync_kit.catalog import check_conflicts, load_catalog, parse_service, resolve_services
+from sync_kit.catalog import (
+    apply_file_patches,
+    check_conflicts,
+    load_catalog,
+    parse_service,
+    resolve_services,
+)
 from sync_kit.errors import ConfigError
 
 DEFAULT_SERVICES = (
@@ -51,6 +57,41 @@ def test_repo_definitions_override_catalog(repo):
         }
     }
     assert load_catalog(repo.root, section)["common"].files[0].path == "OVERRIDE.txt"
+
+
+def test_file_patches_remove_and_append_exact_lines(repo):
+    catalog = load_catalog(repo.root)
+
+    patched = apply_file_patches(
+        catalog,
+        [
+            {
+                "service": "common",
+                "path": ".gitignore",
+                "remove": [".vscode/*", "!.vscode/extensions.json"],
+                "append": [".vscode/", ".astro/"],
+            }
+        ],
+    )
+
+    content = patched["common"].files[0].content.splitlines()
+    assert ".vscode/" in content
+    assert ".astro/" in content
+    assert ".vscode/*" not in content
+    assert "!.vscode/extensions.json" not in content
+
+
+def test_file_patches_are_ordered_and_idempotent(repo):
+    catalog = load_catalog(repo.root)
+    patches = [
+        {"service": "common", "path": ".gitignore", "append": ["custom/"]},
+        {"service": "common", "path": ".gitignore", "remove": ["custom/"]},
+        {"service": "common", "path": ".gitignore", "append": ["custom/"]},
+    ]
+
+    patched = apply_file_patches(catalog, patches)
+    content = patched["common"].files[0].content.splitlines()
+    assert content.count("custom/") == 1
 
 
 def test_custom_service_layers_on_top_of_marketplace_defaults(repo):

@@ -479,6 +479,7 @@ must publish its canonical global config into the destination checkout.
 | `variables` | Merged; repo values override global and Marketplace values. |
 | `marker_namespace`, `managed_note` | A later tier replaces the earlier value. |
 | `service_definitions` | Merged by service name; a same-named entry fully replaces the inherited definition. |
+| `file_patches` | Appended across tiers and applied in order to inherited service file content. Each patch removes exact lines, then appends exact lines without duplicates. |
 
 To keep inherited defaults but drop one service, prefer an exclusion over
 replacing the whole list:
@@ -490,6 +491,29 @@ replacing the whole list:
   }
 }
 ```
+
+To customize an inherited managed file without copying its complete service
+definition, use an ordered `file_patches` entry:
+
+```json
+{
+  "managed_file_sync": {
+    "file_patches": [
+      {
+        "service": "common",
+        "path": ".gitignore",
+        "remove": [".vscode/*", "!.vscode/extensions.json"],
+        "append": [".vscode/"]
+      }
+    ]
+  }
+}
+```
+
+Patches run after the Marketplace baseline, then global config, then
+repository config, and finally inline workflow config. Use `service_definitions`
+when replacing or creating a complete service; use `file_patches` for small
+policy changes to inherited content.
 
 To use only global and repository policy without Marketplace defaults:
 
