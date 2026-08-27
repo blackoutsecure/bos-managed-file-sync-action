@@ -49,13 +49,15 @@
             "topics_fallback": "github-actions code-scanning security sarif posture-audit gitleaks actionlint shellcheck composite-action devsecops github-advanced-security"
         }
     },
-    "general": {
-        "action_test": {
-            "python_versions": [
-                "3.10",
-                "3.11",
-                "3.12"
-            ]
-        }
+    "action_test": {
+        "python_versions": [
+            "3.10",
+            "3.11",
+            "3.12"
+        ],
+        "python_packages": [
+            "-e",
+            ".[dev]"
+        ]
     }
 }
