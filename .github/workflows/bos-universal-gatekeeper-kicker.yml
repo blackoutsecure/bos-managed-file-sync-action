@@ -385,7 +385,10 @@ jobs:
           persist-credentials: false
       - name: Load universal config
         id: config
-        uses: blackoutsecure/bos-automation-hub/.github/actions/universal-config@main
+        # NOTE: `main` still nests shared composites under `.github/actions/shared/`;
+        # `dev` has this flattened to `.github/actions/<name>/`. Resolve against `@main`
+        # (the ref this line targets), not against the `dev` working tree layout.
+        uses: blackoutsecure/bos-automation-hub/.github/actions/shared/universal-config@main
         with:
           config_path: .github/bos-universal-config.json
       # Maps each trigger (and, for `schedule`, each individual cron via
