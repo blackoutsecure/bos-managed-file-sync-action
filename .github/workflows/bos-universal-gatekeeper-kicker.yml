@@ -372,7 +372,7 @@ jobs:
     runs-on: ${{ fromJSON(startsWith(vars.DEFAULT_RUNNER || 'ubuntu-latest', '[') && (vars.DEFAULT_RUNNER || 'ubuntu-latest') || format('"{0}"', vars.DEFAULT_RUNNER || 'ubuntu-latest')) }}
     timeout-minutes: 2
     outputs:
-      cfg: ${{ steps.config.outputs.cfg }}
+      cfg: ${{ steps.config_flat.outputs.cfg || steps.config_nested.outputs.cfg }}
       target_ref: ${{ needs.resolve-target-ref.outputs.target_ref }}
       operation: ${{ steps.dispatch.outputs.operation }}
       force_run: ${{ steps.dispatch.outputs.force }}
@@ -383,12 +383,27 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Load universal config
-        id: config
-        # NOTE: `main` still nests shared composites under `.github/actions/shared/`;
-        # `dev` has this flattened to `.github/actions/<name>/`. Resolve against `@main`
-        # (the ref this line targets), not against the `dev` working tree layout.
-        uses: blackoutsecure/bos-automation-hub/.github/actions/shared/universal-config@main
+      - name: Checkout hub config action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: blackoutsecure/bos-automation-hub
+          ref: main
+          path: hub-config-runtime
+          sparse-checkout: |
+            .github/actions/universal-config
+            .github/actions/shared/universal-config
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Load universal config (flattened layout)
+        id: config_flat
+        if: hashFiles('hub-config-runtime/.github/actions/universal-config/action.yml') != ''
+        uses: ./hub-config-runtime/.github/actions/universal-config
+        with:
+          config_path: .github/bos-universal-config.json
+      - name: Load universal config (nested layout)
+        id: config_nested
+        if: hashFiles('hub-config-runtime/.github/actions/universal-config/action.yml') == '' && hashFiles('hub-config-runtime/.github/actions/shared/universal-config/action.yml') != ''
+        uses: ./hub-config-runtime/.github/actions/shared/universal-config
         with:
           config_path: .github/bos-universal-config.json
       # Maps each trigger (and, for `schedule`, each individual cron via
@@ -403,7 +418,7 @@ jobs:
           SCHEDULE: ${{ github.event.schedule }}
           DISPATCH_OPERATION: ${{ inputs.operation }}
           DISPATCH_FORCE: ${{ inputs.force_run }}
-          PUSH_FORCE: ${{ fromJson(steps.config.outputs.cfg).triggers.force_on_push }}
+          PUSH_FORCE: ${{ fromJson(steps.config_flat.outputs.cfg || steps.config_nested.outputs.cfg).triggers.force_on_push }}
         run: |
           set -euo pipefail
           operation=full
