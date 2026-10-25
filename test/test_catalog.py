@@ -14,6 +14,7 @@ from sync_kit.catalog import (
     resolve_services,
 )
 from sync_kit.errors import ConfigError
+from sync_kit.markers import apply_block
 
 DEFAULT_SERVICES = (
     "common",
@@ -25,12 +26,50 @@ DEFAULT_SERVICES = (
     "prettier",
     "markdownlint",
     "dependabot_pip",
+    "dependabot_cargo",
 )
 
 
 @pytest.mark.parametrize("name", DEFAULT_SERVICES)
 def test_default_catalog_contains_expected_service(repo, name):
     assert name in load_catalog(repo.root)
+
+
+def test_rust_hygiene_preserves_lockfiles_and_default_service_selection(repo):
+    catalog = load_catalog(repo.root)
+    ignore = catalog["common"].files[0].content.splitlines()
+    editor = catalog["editorconfig"].files[0].content
+
+    assert "target/" in ignore
+    assert not any("Cargo.lock" in line for line in ignore)
+    assert "[*.rs]\nindent_size = 4" in editor
+    assert "dependabot_cargo" not in [
+        service.name for service in resolve_services(catalog, {"services": ["baseline"]})
+    ]
+
+
+def test_cargo_dependabot_service_is_standalone_and_uses_default_branch(repo):
+    entry = load_catalog(repo.root)["dependabot_cargo"].files[0]
+
+    assert entry.path == ".github/dependabot.yml"
+    assert entry.scaffold == "version: 2\nupdates:"
+    assert "package-ecosystem: cargo" in entry.content
+    assert "target-branch:" not in entry.content
+
+
+def test_cargo_service_renders_valid_idempotent_yaml(repo):
+    import yaml
+
+    entry = load_catalog(repo.root)["dependabot_cargo"].files[0]
+    rendered = apply_block(entry.scaffold + "\n", "dependabot_cargo", entry.content, "#")
+
+    dependabot = yaml.safe_load(rendered)
+    assert dependabot["version"] == 2
+    assert len(dependabot["updates"]) == 1
+    assert dependabot["updates"][0]["package-ecosystem"] == "cargo"
+    assert dependabot["updates"][0]["directory"] == "/"
+    assert "target-branch" not in dependabot["updates"][0]
+    assert apply_block(rendered, "dependabot_cargo", entry.content, "#") == rendered
 
 
 def test_quality_baseline_bundle_adds_optional_quality_services(repo):

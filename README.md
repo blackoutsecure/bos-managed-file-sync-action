@@ -349,6 +349,7 @@ individual entry in `files` can override it.
 | `markdownlint` | file (+ `absent` cleanup) | `.markdownlint.yaml`; retires the legacy `.markdownlint.json` | ✅ |
 | `dependabot_actions` | block | `.github/dependabot.yml` | ✅ |
 | `dependabot_pip` | block | `.github/dependabot.yml` | ✅ |
+| `dependabot_cargo` | block | `.github/dependabot.yml` | — |
 | `shellcheck` | block | `.shellcheckrc` | — |
 | `yamllint` | file | `.yamllint.yml` | — |
 | `coverage_artifacts` | block | `.gitignore` | — |
@@ -382,6 +383,14 @@ still opt back out for itself with `disabled_services: ["coverage_artifacts"]`
 artifacts (venvs, caches, `*.egg-info/`, `npm-debug.log*`, etc.) that only
 make sense for repos actually using that language — unlike `common`, they're
 opt-in so a Node-only repo isn't carrying Python ignore rules and vice versa.
+
+Rust build output (`target/`) is covered by `common`, and `editorconfig`
+uses four-space indentation for Rust. `Cargo.lock` is deliberately not
+ignored. A repository with a root Cargo workspace can opt into
+`dependabot_cargo`; it follows the repository's actual default branch
+instead of assuming `dev`. Disable `dependabot_pip` only after removing
+the last Python dependency manifest. Nested independent Cargo workspaces
+need repository-specific Dependabot directories.
 
 `editorconfig` and `prettier` have distinct ownership boundaries:
 

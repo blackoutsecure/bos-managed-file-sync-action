@@ -79,6 +79,7 @@
               "",
               "# Build + dependency output",
               "node_modules/",
+              "target/",
               "dist/",
               "build/",
               ".astro/",
@@ -185,6 +186,31 @@
           }
         ]
       },
+      "dependabot_cargo": {
+        "mode": "block",
+        "description": "Opt-in Dependabot updates for a root Cargo workspace. Uses the repository default branch.",
+        "files": [
+          {
+            "path": ".github/dependabot.yml",
+            "scaffold": [
+              "version: 2",
+              "updates:"
+            ],
+            "content_lines": [
+              "  - package-ecosystem: cargo",
+              "    directory: /",
+              "    schedule:",
+              "      interval: weekly",
+              "    open-pull-requests-limit: 5",
+              "    commit-message:",
+              "      prefix: \"chore(deps)\"",
+              "    labels:",
+              "      - dependencies",
+              "      - rust"
+            ]
+          }
+        ]
+      },
       "editorconfig": {
         "mode": "block",
         "description": "Baseline editor configuration managed in a dedicated block.",
@@ -204,6 +230,9 @@
               "indent_size = 2",
               "",
               "[*.py]",
+              "indent_size = 4",
+              "",
+              "[*.rs]",
               "indent_size = 4",
               "",
               "[*.md]",
